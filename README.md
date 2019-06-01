@@ -2,6 +2,7 @@
 Windows Artifact Retrieval and Discovery
 
 Usage:
+
   -t (Target) - Specify remote hostname/IP Address
   
   -c (Credential) - Specify credential of elevated user with Remote WMI Access to Target
