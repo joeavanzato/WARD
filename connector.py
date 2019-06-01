@@ -88,7 +88,7 @@ class connector(): #Create, Execute, Destroy.
         process_id, return_value = self.session.Win32_Process.Create(CommandLine=r"cmd.exe /c "+command+" >> "+self.envroot+":\\Users\\"+self.user+"\Paychex_Temp_SIU\\"+artifact_name+str(iteration)+extension, ProcessStartupInformation=process_startup)
         #test = subprocess.check_output(["ipconfig", "/all"])
         print("Command Executed: cmd.exe /c "+command+" >> "+self.envroot+":\\Users\\"+self.user+"\Paychex_Temp_SIU\\"+artifact_name+str(iteration)+extension)
-        print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value))
+        print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
 
     def disconnect(self):
         try:
