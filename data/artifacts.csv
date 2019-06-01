@@ -29,7 +29,7 @@ REGISTRY_KEY,AllUsersProfileEnvironmentVariable,HKEY_LOCAL_MACHINE\Software\Micr
 REGISTRY_VALUE,CurrentControlSet,HKEY_LOCAL_MACHINE\SYSTEM\Select;Current,The control set the system is currently using.,legacy.yaml
 REGISTRY_VALUE,ProgramFiles,HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion;ProgramFilesDir,The %ProgramFiles% environment variable.,legacy.yaml
 REGISTRY_VALUE,ProgramFilesx86,HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion;ProgramFilesDir (x86),The %ProgramFiles (x86)% environment variable.,legacy.yaml
-REGISTRY_VALUE,SystemDriveEnvironmentVariable,HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion;SystemRoot,The %SystemDrive% environment variable- usually "C:".This value isn't actually present in the Registry but with some parsing wecan figure it out from SystemRoot.,legacy.yaml
+REGISTRY_VALUE,SystemDriveEnvironmentVariable,HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion;SystemRoot,The %SystemDrive% environment variable- usually C:.This value isn't actually present in the Registry but with some parsing wecan figure it out from SystemRoot.,legacy.yaml
 REGISTRY_VALUE,SystemRoot,HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion;SystemRoot,The system root directory path- defined by %SystemRoot%- typically "C:\Windows".,legacy.yaml
 REGISTRY_VALUE,TempEnvironmentVariable,HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment;TEMP,The %TEMP% environment variable.,legacy.yaml
 REGISTRY_VALUE,WinCodePage,HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Nls\CodePage;ACP,The codepage of the system.,legacy.yaml
