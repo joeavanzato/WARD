@@ -1,4 +1,4 @@
-import csv, time, sys, argparse, win32api, win32net, traceback, connector, getpass, subprocess, wmi, os
+import csv, time, sys, argparse, win32api, win32net, traceback, connector, getpass, subprocess, wmi, os, yaml
 parser = argparse.ArgumentParser(usage = '\n Remote Artifact Analysis and Retrieval\n  -t -- [Target Host-Name or IP Address (Only One)]\n -c -- UserName to Connect Via (Alt Account)\n  -u -- Target User Name to Inspect')
 parser.add_argument("-t", "--target", help='Specify Target Host Name or IP Address', required = True) #Target machine
 parser.add_argument("-c", "--credential", help='Specify UID to Connect VIA', required = True) #Credential/UserName for Access
@@ -10,6 +10,7 @@ elevated_username = args.credential
 user_target = args.user_target
 admin_priv = args.admin
 artifact_file="artifacts.csv" #Input Artifact File in format "TYPE, NAME, ; separated VALUES, DOCUMENTATION
+yaml_data_folder = "data" #Name of folder storing .yaml artifact signatures
 global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir
 domain = "X"
 
@@ -26,11 +27,59 @@ def main():#Because every tool has ASCII art, right?
     print("Joe Avanzato , github.com/joeavanzato\n")
     print("########################################\n")
 
-    parse_artifacts() #Read the Input File (TYPE, NAME, VALUES(; sep.), DOCUMENTATION
-    separate_into_named_lists() #Separate the gathered data into various lists
-    establish_connection() #Prepare Connection to Remote HOst
-    test_connection() #Verify working connection with ipconfig
-    parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
+    read_yaml_data()
+
+
+    #Temporarily commenting out main functions
+    #parse_artifacts() #Read the Input File (TYPE, NAME, VALUES(; sep.), DOCUMENTATION
+    #separate_into_named_lists() #Separate the gathered data into various lists
+    #establish_connection() #Prepare Connection to Remote HOst
+    #test_connection() #Verify working connection with ipconfig
+    #parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
+
+def read_yaml_data():
+    yaml_files = [f for f in os.listdir(yaml_data_folder) if os.path.isfile(os.path.join(yaml_data_folder, f))]
+    with open('artifacts_all.csv', 'w', newline='') as a:
+        #writer = csv.writer(a, delimiter=',')
+        for file in yaml_files:
+            with open(yaml_data_folder+"\\"+file) as f:
+                for item in yaml.load_all(f):
+                    source_data = item.get("sources")
+                    for data_feed in source_data:
+                        print("")
+                        if "Windows" in str(item.get("supported_os")):
+                            #print(item.get("name"))
+                            name = item.get("name")
+                            #print(item.get("doc"))
+                            documentation = item.get("doc")
+                            #print(data_feed.get("type"))
+                            art_type = data_feed.get("type")
+                            if art_type == "FILE":
+                                attributes = data_feed.get("attributes")
+                                #print(attributes)
+                                paths = attributes.get("paths")
+                                path_string = ""
+                                len(paths)
+                                x = 0
+                                for value in paths:
+                                    print(value)
+                                    if x == 0: 
+                                        path_string = value
+                                    else:
+                                        path_string = path_string + ";" + value
+                                    x = x + 1
+                                row = art_type+","+name+","+path_string+","+documentation.replace(",","-").replace("\n","").replace("\r","")+"\n"
+                                a.write(row)
+
+                            #ADD STATEMENTS FOR OTHER ARTIFACT TYPES
+
+                            #print(item.get("sources"))
+                            #print(item.get("supported_os"))
+                            #print(data_feed)
+                            #row = art_type+","+name+","+"X"+","+documentation.replace(",","-").replace("\n","").replace("\r","")+"\n"
+                            #a.write(row)
+                        else:
+                            pass
 
 
 def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default WINDIR
@@ -77,24 +126,36 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
         print(traceback.print_exc(sys.exc_info()))
         exit(0)
 
-def replace_values(item):#Replace placeholder strings in artifacts with gathered data
+def replace_values(item):#Replace placeholder strings in artifacts with gathered data -> check for other necessary replacements
     if "%%users.userprofile%%" in item:
         item = item.replace("%%users.userprofile%%", base_user_dir)
     if "%%users.sid%%" in item:
         item = item.replace("%%users.sid%%", user_sid)
+    if "%%users.username%%" in item:
+        item = item.replace("%%users.username%%", user_target)
+    if "%%users.temp%%" in item:
+        item = item.replace("%%users.temp%%", user_local_appdata_dir+"\Temp")
     if "%%users.localappdata%%" in item:
         item = item.replace("%%users.localappdata%%", user_local_appdata_dir)
     if "%%users.appdata%%" in item:
         item = item.replace("%%users.appdata%%", user_appdata_dir)
     if "%%environ_systemroot%%" in item:
         item = item.replace("%%environ_systemroot%%", system_root+":\Windows")
+    if "%%environ_systemdrive%%" in item:
+        item = item.replace("%%environ_systemdrive%%", system_root)
     if ("%%environ_windir%%" in item) and (win_def == 0):
         item = item.replace("%%environ_windir%%", win_dir)
     elif ("%%environ_windir%%" in item) and (win_def == 1):
         item = item.replace("%%environ_windir%%", system_root+":\Windows")
+    if "%%environ_allusersappdata%%" in item:
+        item = item.replace("%%environ_allusersappdata%%", system_root+":\ProgramData")
+    if "%%environ_programfiles%%" in item:
+        item = item.replace("%%environ_programfiles%%", system_root+":\Program Files")
+    if "%%environ_programfilesx86%%" in item:
+        item = item.replace("%%environ_programfilesx86%%", system_root+":\Program Files (x86)")
     return item
 
-def split_items(values): #Split REGV into key:value pair
+def split_items(values): #Split REGV into key:value pair -> think about building straight or still using CSV
     item_dict = {}
     item_list = values.split(";")
     x = 0
@@ -109,7 +170,7 @@ def split_items(values): #Split REGV into key:value pair
         #print(str(x))
     return item_dict
 
-def parse_and_pass():#Separate values in individual artifact types and send to handler function, TODO REGK
+def parse_and_pass():#Separate values in individual artifact types and send to handler function, TO DO REGK
     for item in directories:
         #print(item)
         artifact_name = item
@@ -172,7 +233,7 @@ def parse_artifacts():
                 atype = atype.replace("\"", "").strip()
                 name = name.replace("\"", "").strip()
                 values=values.replace("\"", "").strip()
-                doc=doc.replace("\"", "")
+                doc=doc.replace("\"", "").strip()
                 type_dict[name] = atype
                 values_dict[name] = values
                 doc_dict[name] = doc
@@ -190,7 +251,7 @@ def parse_artifacts():
     print("Loaded Types, Names, Values and Documentation with "+str(error_count)+" Errors..")
     print("Total of "+str(artifact_count)+" separate artifact definitions found in database..")
 
-def separate_into_named_lists():
+def separate_into_named_lists(): #Add lists for other types, etc
     print("Separating Data..\n")
     global registry_keys, registry_values, files, commands, directories
     registry_keys = []
@@ -199,7 +260,7 @@ def separate_into_named_lists():
     commands = []
     directories = []
 
-    for key, value in type_dict.items():
+    for key, value in type_dict.items(): #Rename according to proper artifact names, add other artifact types
         if value == "REGK":
             registry_keys.append(key)
         elif value == "REGV":
@@ -225,7 +286,7 @@ def separate_into_named_lists():
         count_commands = count_commands + 1
     for item in directories:
         count_directories = count_directories + 1
-    print("REGISTRY KEY ENTRIES : "+str(count_reg_keys))
+    print("REGISTRY KEY ENTRIES : "+str(count_reg_keys)) #Add print for other types
     print("REGISTRY VALUE ENTRIES : "+str(count_reg_values))
     print("FILE ENTRIES : "+str(count_files))
     print("COMMAND ENTRIES : "+str(count_commands))
@@ -245,7 +306,7 @@ def check_dir_contents(directory, artifact_name, iteration):#Send directory path
 def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:VALUE pair to WMI Session to extract value if exists
     print("Examining Registry Value : "+reg_key+":"+reg_val)
     if "*" in reg_key:
-        print("TODO WILDCARD HANDLING")
+        print("TO DO WILDCARD HANDLING")
     else:
         command = "reg query \""+reg_key+"\" /v "+reg_val
         command = command.replace("HKEY_LOCAL_MACHINE", "HKLM").replace("HKEY_USERS", "HKU")
@@ -253,11 +314,12 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
 
 def gather_file(file_name, artifact_name, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
     if "*" in file_name:
-        print("TODO WILDCARD HANDLING")
+        print("TO DO WILDCARD HANDLING")
     else:
         print("Copying File : "+file_name)
         name, extension = os.path.splitext(file_name)
         command = "copy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\Paychex_Temp_SIU"
         rem_con.execute(command, artifact_name, iteration, extension)
 
+        #Add handler functions for other types
 main()
