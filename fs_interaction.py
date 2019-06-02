@@ -1,22 +1,57 @@
-import yaml, os, datetime, tqdm, ctypes, sys, time, colorama
+import yaml, os, datetime, tqdm, ctypes, sys, time, colorama, traceback, config
 
-def read_yaml_data(data, artifact_file):
+class log_writer(): #Responsible for writing data to error/execution logs
+
+    def __init__(self):
+        #print("Log Writer Instantiated..")
+        self.execution_log = config.execution_log
+        self.error_log = config.error_log
+
+    def write_log(self, type, data):
+        if type == "Error":
+            with open(self.error_log, 'a+') as f:
+                if "\n" not in data:
+                    data = data + "\n"
+                f.write(str(datetime.datetime.now())+" "+data)
+        elif type == "Execution":
+            with open(self.execution_log, 'a+') as f:
+                if "\n" not in data:
+                    data = data + "\n"
+                f.write(str(datetime.datetime.now())+" "+data)
+
+
+
+def read_yaml_data(data, artifact_file):#Responsible for parsing YAML data structures within folder and some basic replacement with things I found worked
+    import read_replacer
+    replacer = read_replacer.replacer()
     yaml_data_folder = data #Name of folder storing .yaml artifact signatures
     print("Reading YAML Files...")
     yaml_files = [f for f in os.listdir(yaml_data_folder) if os.path.isfile(os.path.join(yaml_data_folder, f))]
+    longest = 0
+    for name in yaml_files: #Calculating longest file name to make progress bar pretty
+        length = len(name)
+        #print(length, longest)
+        if length > longest:
+            longest = len(name)
+    log_buddy = log_writer()
     with open(artifact_file, 'w', newline='') as a:
         progress_bar = tqdm.tqdm(total=len(yaml_files))
         for file in yaml_files:
             progress_bar.update(1)
-            progress_bar.set_description("Reading: "+file)
+            difference = longest - len(file) #Finding difference between longest and current file name
+            desc = file
+            for x in range(0, difference): #Adding spaces corresponding to length difference
+                desc = " "+desc
+            progress_bar.set_description("READING FILE: "+desc)
             #print("Reading : "+file)
-            time.sleep(.1)
+            #time.sleep(.1)
             try:
                 with open(yaml_data_folder+"\\"+file) as f:
                     for item in yaml.load_all(f, Loader=yaml.FullLoader):
                         source_data = item.get("sources")
                         for data_feed in source_data:
                             #print("")
+                            log_buddy.write_log("Execution","READING: "+item.get("name")+" in "+file+"..\n")
                             if "Windows" in str(item.get("supported_os")):
                                 #print(item.get("name"))
                                 name = item.get("name")
@@ -97,63 +132,48 @@ def read_yaml_data(data, artifact_file):
                                     query = query.replace("Win32_","")
                                     query = query.replace(r"SELECT * FROM","").replace(r"SELECT * from","")
                                     query = query+" get * /value"
-                                    if "ComputerSystem" in query:
-                                        query = query.replace("ComputerSystemProduct", "ComputerSystem")
-                                    if "SystemDriver" in query:
-                                        query = query.replace("SystemDriver", "SysDriver")
-                                        query = query.replace("SELECT DisplayName, Description, InstallDate, Name, PathName, Status, State, ServiceType from","")
-                                        query = query.replace("get *", "get DisplayName, Description, InstallDate, Name, PathName, Status, State, ServiceType")
-                                    if "from Product get" in query:
-                                        query = query.replace("SELECT Name, Vendor, Description, InstallDate, InstallDate2, Version from", "")
-                                        query = query.replace("get *","get Name, Vendor, Description, InstallDate, InstallDate2, Version")
-                                    if "LastBootUpTime" in query:
-                                        query = query.replace("SELECT LastBootUpTime FROM","")
-                                        query = query.replace("get *","get LastBootUpTime")
-                                    if "QuickFixEngineering" in query:
-                                        query = query.replace("QuickFixEngineering", "QFE")
-                                    if "OperatingSystem" in query:
-                                        query = query.replace("OperatingSystem","OS")
-                                    if "LogonSession" in query:
-                                        query = query.replace("LogonSession","Logon")
-                                    if "GroupUser" in query:
-                                        query = query.replace("GroupUser where Name = \"login_users\"", "Group")
-                                    if "PhysicalMemory" in query:
-                                        query = query.replace("PhysicalMemory","MEMPHYSICAL")
-                                    if "UserProfile" in query:
-                                        query = query.replace("UserProfile WHERE SID='%%users.sid%%'", "UserAccount")
-                                    if "StartupCommand" in query:
-                                        query = query.replace("StartupCommand", "Startup")
-                                    query = query.replace(",",".")
+                                    query = replacer.wmi_replacer(query)
+                                    query = query.replace(",",".") #Because CSV
+                                    log_buddy.write_log("Execution","REPLACED ',' WITH '.' IN "+query)
                                     #print(name_space)
                                     #print(query)
                                     wmi_query_string = "wmic /namespace"+name_space+query+";"
+                                    log_buddy.write_log("Execution","BUILT QUERY STRING "+wmi_query_string)
                                     #print(wmi_query_string)
                                     row = art_type+","+name+","+"\""+wmi_query_string+"\""+","+documentation.replace(",","-").replace("\n","").replace("\r","").replace("\"","'")+","+file+"\n"
+                                    log_buddy.write_log("Execution", "WROTE TO ARTIFACTS.CSV : "+row)
                                     a.write(row)
                             else:
                                 pass
-                with open(execution_logx, 'a+') as f:
-                    f.write(str(datetime.datetime.now())+" "+"Reading : "+file+"..\n")
             except:
-                print("ERROR Reading : "+file)
-                with open(error_logx, 'a+') as f:
-                    f.write(str(datetime.datetime.now())+" "+"ERROR Reading : "+file+"..\n")
+                print(traceback.print_exc(sys.exc_info()))
+                print("\nERROR Reading : "+file)
+                log_buddy.write_log("Error"," "+"ERROR Reading : "+file+"..\n")
         progress_bar.close()
 
-def setup_log_file(execution_label, error_log, execution_log):
-    global execution_logx, error_logx
-    execution_logx = execution_log
-    error_logx = error_log
+def setup_log_file(execution_label, error_log, execution_log):#Creates error/execution log files along with log/data directories
+    global execution_log_tmp, error_log_tmp
+    execution_log_tmp = execution_log
+    error_log_tmp = error_log
     try:
-        print("Making "+execution_label+"-'logs' Directory..")
+        print("Making "+execution_label+"-logs Directory..")
         os.mkdir(execution_label+"-logs")
     except:
-        print("ERROR "+execution_label+"-'logs' directory already exists..")
+        print("ERROR "+execution_label+"-logs directory already exists or lacking permissions..")
     try:
-        print("Making "+execution_label+"-'data' Directory..")
+        print("Making "+execution_label+"-data Directory..")
         os.mkdir(execution_label+"-data")
     except:
-        print("ERROR "+execution_label+"-'data' directory already exists..")
+        print("ERROR "+execution_label+"-data directory already exists or lacking permissions..")
+    try:
+        print("Making "+execution_label+r"-data\files Directory..")
+        cur_dir = os.getcwd()
+        os.chdir(execution_label+"-data")
+        os.mkdir("files")
+        os.chdir(cur_dir)
+    except:
+        os.chdir(cur_dir)
+        print("ERROR "+execution_label+r"-data\files directory already exists or lacking permissions..")
     mode = 'a' if os.path.exists(error_log) else 'w'
     with open(error_log, mode):
         print("Error Log Created..")

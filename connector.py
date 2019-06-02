@@ -1,4 +1,4 @@
-import subprocess, traceback, sys, wmi, subprocess, win32api, winreg, os
+import subprocess, traceback, sys, wmi, subprocess, win32api, winreg, os, config, fs_interaction
 
 class connector(): #Create, Execute, Destroy.
 
@@ -12,7 +12,7 @@ class connector(): #Create, Execute, Destroy.
         self.domain = domain
         self.root = " "
         self.envroot = " "
-
+        self.log_buddy = fs_interaction.log_writer()
 
     def create_session(self): #Establish WMI Connection - will play with WinRM in future..
         print("Target : "+self.target)
@@ -106,10 +106,26 @@ class connector(): #Create, Execute, Destroy.
             #print("Process Executed: cmd.exe /c "+command+" > "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt")
             #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
 
-    def disconnect(self):
+    def connect_drive(self):
         try:
-            subprocess.call(r'net use Z: /delete', shell=True)
-            print("Connection Closed Successfully")
+            print("Trying to Map Target Drive..")
+            if self.domain == "":
+                subprocess.call(r'net use \\'+"\""+self.target+"\\"+config.system_root+" /u:"+self.credential, shell=True)
+                self.log_buddy.write_log('Execution', r'EXECUTED net use \\'+"\""+self.target+"\C /u:"+self.credential)
+            else:
+                subprocess.call(r'net use \\'+"\""+self.target+"\\"+config.system_root+" /u:"+self.domain+"\\"+self.credential, shell=True)
+                self.log_buddy.write_log('Execution', r'EXECUTED net use \\'+"\""+self.target+"\C /u:"+self.domain+"\\"+self.credential)
+            print("Mapped Target Drive..")
+        except:
+            print("Failed to Open Connection")
+            print(traceback.print_exc(sys.exc_info()))
+            exit(0)
+
+    def disconnect_drive(self):
+        try:
+            print("Trying to Remove Mapped Target Drive")
+            subprocess.call(r'net use \\'+self.target+"\\"+config.system_root+" /delete", shell=True)
+            print("UnMapped Target Drive..")
         except:
             print("Failed to Close Connection")
             print(traceback.print_exc(sys.exc_info()))
