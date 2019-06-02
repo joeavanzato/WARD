@@ -1,23 +1,30 @@
-import csv, time, sys, argparse, win32api, win32net, traceback, connector, getpass, subprocess, wmi, os, yaml
+import csv, time, sys, argparse, win32api, win32net, traceback, connector, getpass, subprocess, wmi, os, yaml, fs_interaction, datetime, tqdm, ctypes, colorama
 parser = argparse.ArgumentParser(usage = '\n Remote Artifact Analysis and Retrieval\n  -t -- [Target Host-Name or IP Address (Only One)]\n -c -- UserName to Connect Via (Alt Account)\n  -u -- Target User Name to Inspect')
 parser.add_argument("-t", "--target", help='Specify Target Host Name or IP Address', required = True) #Target machine
 parser.add_argument("-c", "--credential", help='Specify UID to Connect VIA', required = True) #Credential/UserName for Access
 parser.add_argument("-u", "--user_target", help='Specify UID to Target', required = True) #Target User for Analysis
-parser.add_argument("-a", "--admin", help='Use if running in alt/administrator cmdline', required = False, action="store_true") #If admin, can use winreg on local/direct WMI, else need to authenticate and perform on remote.
+parser.add_argument("-a", "--admin", help='Use if running in alt/administrator cmdline', required = False, action="store_true") #If admin, can use winreg on local/direct WMI, else need to authenticate and perform on remote. Does Nothing Yet..
 parser.add_argument("-build", "--build", help='Use to build artifacts.csv from YAML Data', required = False, action="store_true") 
 
+#TO DO - Add Recursive Registry/File Copy Support, Ensure Integrity that actions reported are actually occurring, build out log writing
+
+
+global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir
 args = parser.parse_args()
+current_datetime = datetime.datetime.now()
 target = args.target
 elevated_username = args.credential
 user_target = args.user_target
 admin_priv = args.admin
 build = args.build
-artifact_file="data\\"+"artifacts.csv" #Input Artifact File in format "TYPE, NAME, ; separated VALUES, DOCUMENTATION
-execution_log="data\\"+"execution_log.txt"
-error_log="data\\"+"error_log.txt"
-yaml_data_folder = "data" #Name of folder storing .yaml artifact signatures
-global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir
+execution_label = target+"["+user_target+"]"
+artifact_file=execution_label+"-data/artifacts.csv" #Input Artifact File in format "TYPE, NAME, ; separated VALUES, DOCUMENTATION
+execution_log=execution_label+"-logs/execution_log.txt"
+error_log=execution_label+"-logs/error_log.txt"
+yaml_data_folder = "yamldata" #Name of folder storing .yaml artifact signatures
 domain = "X"
+kernel32 = ctypes.windll.kernel32
+
 
 def main():#Because every tool has ASCII art, right?
     print("########################################\n")
@@ -32,110 +39,19 @@ def main():#Because every tool has ASCII art, right?
     print("Joe Avanzato , github.com/joeavanzato\n")
     print("########################################\n")
 
-    setup_log_files()
+    fs_interaction.setup_log_file(execution_label, error_log, execution_log)
     if build == True:
-        read_yaml_data()
+        fs_interaction.read_yaml_data(yaml_data_folder, artifact_file)
     parse_artifacts() #Read the Built File (TYPE, NAME, VALUES(; sep.), DOCUMENTATION
     separate_into_named_lists() #Separate the gathered data into various lists
     establish_connection() #Prepare Connection to Remote Host
     test_connection() #Verify working connection with ipconfig
     parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
 
-def setup_log_files():
-    with open(execution_log, 'w') as f:
-        print("Execution Log Created..")
-        f.write("Execution Log Created..\n")
-    with open(error_log, 'w') as f:
-        print("Error Log Created..")
-        f.write("Error Log Created..\n")
-
-def read_yaml_data():
-    print("Reading YAML Files...")
-    yaml_files = [f for f in os.listdir(yaml_data_folder) if os.path.isfile(os.path.join(yaml_data_folder, f))]
-    with open(artifact_file, 'w', newline='') as a:
-        #writer = csv.writer(a, delimiter=',')
-        for file in yaml_files:
-            print("Reading : "+file)
-            with open(yaml_data_folder+"\\"+file) as f:
-                for item in yaml.load_all(f, Loader=yaml.FullLoader):
-                    source_data = item.get("sources")
-                    for data_feed in source_data:
-                        #print("")
-                        if "Windows" in str(item.get("supported_os")):
-                            #print(item.get("name"))
-                            name = item.get("name")
-                            #print(item.get("doc"))
-                            documentation = item.get("doc")
-                            #print(data_feed.get("type"))
-                            #print(item.get("sources"))
-                            #print(item.get("supported_os"))
-                            #print(data_feed)
-                            art_type = data_feed.get("type")
-                            if (art_type == "FILE") or (art_type == "DIRECTORY"):
-                                attributes = data_feed.get("attributes")
-                                paths = attributes.get("paths")
-                                path_string = ""
-                                len(paths)
-                                x = 0
-                                for value in paths:
-                                    if x == 0: 
-                                        path_string = value
-                                    else:
-                                        path_string = path_string + ";" + value
-                                    x = x + 1
-                                row = art_type+","+name+","+path_string+","+documentation.replace(",","-").replace("\n","").replace("\r","")+","+file+"\n"
-                                a.write(row)
-                            if art_type == "REGISTRY_KEY":
-                                attributes = data_feed.get("attributes")
-                                keys = attributes.get("keys")
-                                key_string = ""
-                                x = 0
-                                for value in keys:
-                                    if x == 0:
-                                        key_string = value
-                                    else:
-                                        key_string = key_string + ";" + value
-                                    x = x + 1
-                                row = art_type+","+name+","+key_string+","+documentation.replace(",","-").replace("\n","").replace("\r","")+","+file+"\n"
-                                a.write(row)
-                            if art_type == "REGISTRY_VALUE":
-                                attributes = data_feed.get("attributes")
-                                key_pairs = attributes.get("key_value_pairs")
-                                key_value_string = ""
-                                for item in key_pairs:
-                                    reg_value = item.get("value")
-                                    reg_key = item.get("key")
-                                    key_value_string = reg_key +";"+reg_value
-                                row = art_type+","+name+","+key_value_string+","+documentation.replace(",","-").replace("\n","").replace("\r","")+","+file+"\n"
-                                a.write(row)
-                            if art_type == "COMMAND":
-                                attributes = data_feed.get("attributes")
-                                cmd_arg_string = ""
-                                cmd = attributes.get("cmd")
-                                args = ""
-                                x = 0
-                                for item in attributes.get("args"):
-                                    if x == 0:
-                                        args = item
-                                        x = x + 1
-                                    else:
-                                        args = args + " " + item
-                                cmd_arg_string = cmd+";"+args
-                                #print(cmd_arg_string)
-                                row = art_type+","+name+","+cmd_arg_string+","+documentation.replace(",","-").replace("\n","").replace("\r","")+","+file+"\n"
-                                a.write(row)
-                            if art_type == "PATH":
-                                attributes = data_feed.get("attributes")
-                                print(attributes)
-                            if art_type == "WMI":
-                                attributes = data_feed.get("attributes")
-                                print(attributes)
-                        else:
-                            pass
 
 def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default WINDIR
     global rem_con, user_sid, user_path, system_root, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, win_dir, win_def
-    print("Building Remote Connection..\n")
+    print("\nBuilding Remote Connection..\n")
     if admin_priv == False:
         password = getpass.getpass(prompt="Password for "+elevated_username+":")
         rem_con = connector.connector(target, elevated_username, password, user_target, domain)
@@ -151,7 +67,7 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
         user_sid, user_path = rem_con.get_sid()
         system_root = user_path[0]
         base_user_dir = system_root+":\\Users\\" + user_target
-        user_appdata_dir = base_user_dir+"AppData"
+        user_appdata_dir = base_user_dir+"\\"+"AppData"
         user_local_appdata_dir = user_appdata_dir+"\\"+"Local"
         user_roaming_appdata_dir = user_appdata_dir+"\\"+"Roaming"
         win_def = 0 
@@ -171,7 +87,7 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
     print("\nVerifying Connectivity..")
     command = 'ipconfig /all'
     try:
-        rem_con.execute(command, "ipconfig", 0, ".txt")
+        rem_con.execute(command, "ipconfig", 0)
     except:
         print("ERROR Executing Command..Does the User Account lack WMI permissions?")
         print(traceback.print_exc(sys.exc_info()))
@@ -193,7 +109,7 @@ def replace_values(item):#Replace placeholder strings in artifacts with gathered
     if "%%environ_systemroot%%" in item:
         item = item.replace("%%environ_systemroot%%", system_root+":\Windows")
     if "%%environ_systemdrive%%" in item:
-        item = item.replace("%%environ_systemdrive%%", system_root)
+        item = item.replace("%%environ_systemdrive%%", system_root+":\\")
     if ("%%environ_windir%%" in item) and (win_def == 0):
         item = item.replace("%%environ_windir%%", win_dir)
     elif ("%%environ_windir%%" in item) and (win_def == 1):
@@ -204,6 +120,10 @@ def replace_values(item):#Replace placeholder strings in artifacts with gathered
         item = item.replace("%%environ_programfiles%%", system_root+":\Program Files")
     if "%%environ_programfilesx86%%" in item:
         item = item.replace("%%environ_programfilesx86%%", system_root+":\Program Files (x86)")
+    if "%%users.homedir%%" in item:
+        item = item.replace("%%users.homedir%%", user_path+"\\")
+    if r"\\\\" in item:
+        item = item.replace(r"\\\\", r"\\")
     return item
 
 def split_items(values): #Split REGV into key:value pair -> think about building straight or still using CSV
@@ -221,7 +141,7 @@ def split_items(values): #Split REGV into key:value pair -> think about building
         #print(str(x))
     return item_dict
 
-def parse_and_pass():#Separate values in individual artifact types and send to handler function, TO DO REGK, CMDS, WMI
+def parse_and_pass():#Separate values in individual artifact types and send to handler function, TO DO REGK, WMI
     for item in directories:
         #print(item)
         artifact_name = item
@@ -234,13 +154,17 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             check_dir_contents(item, artifact_name, x)
             x = x + 1
 
+    kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    sys.stdout.write(u"\u001b[1000D")
+    sys.stdout.flush()
+    progress_bar = tqdm.tqdm(total=count_reg_values)
     for item in registry_values:
         #print(item)
         artifact_name = item
         value_raw = values_dict.get(item)
         #print(value_raw)
         temp_values_dict = split_items(value_raw)
-        print("\nArtifact Name: " + artifact_name)
+        #print("\nArtifact Name: " + artifact_name)
         x = 0 
         for key, value in temp_values_dict.items():
             try:
@@ -249,19 +173,24 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                 reg_value = value
                 check_reg_values(reg_key, reg_value, artifact_name, x)
                 x = x + 1
+                progress_bar.update(1)
             except:
                 print("Error Reading Key:Value "+reg_key+":"+reg_value)
                 x = x + 1
+        progress_bar.update(1)
+    progress_bar.close()
 
-    for item in files:
+    for item in tqdm.tqdm(files):
         artifact_name = item
         value_raw = values_dict.get(item)
+        #print(value_raw)
         item_list = replace_values(value_raw)
         file_list = item_list.split(";")
         print("\nArtifact Name: " + artifact_name)
         x = 0
         for file in file_list:
             try:
+                #print(value_raw)
                 gather_file(file, artifact_name, x)
                 x = x + 1
             except:
@@ -276,6 +205,8 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         print("\nArtifact Name: "+ artifact_name)
         x = 0
         for cmd in cmd_list:
+            if cmd == "":
+                pass
             #print(cmd)
             if x == 0:
                 try:
@@ -292,6 +223,27 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                     print("ERROR executing "+cmd)
                     x = x + 2
 
+    for item in tqdm.tqdm(wmic_cmds):
+        artifact_name = item
+        value_raw = values_dict.get(item)
+        item_list = replace_values(value_raw)
+        wmic_list = item_list.split(";")
+        print("\nArtifact Name: "+ artifact_name)
+        x = 0
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+        sys.stdout.write(u"\u001b[1000D")
+        sys.stdout.flush()
+        for cmd in wmic_list:
+            if "." in cmd:
+                cmd = cmd.replace(".",",")
+            #print(cmd)
+            if cmd == "":
+                x = x + 1
+                pass
+            else:
+                run_command(cmd, artifact_name, x)
+            x = x + 1
+
 def parse_artifacts():
     global type_dict, values_dict, doc_dict, artifact_count, category_dict
     type_dict = {}
@@ -305,7 +257,11 @@ def parse_artifacts():
         for line in f:
             try:
                 #print(line)
-                atype, name, values, doc, cat = line.split(",")
+                try:
+                    atype, name, values, doc, cat = line.split(",")
+                except:
+                    print("ERROR encountered too many values..commas inside quotes?")
+
                 atype = atype.replace("\"", "").strip()
                 name = name.replace("\"", "").strip()
                 values=values.replace("\"", "").strip()
@@ -317,7 +273,7 @@ def parse_artifacts():
                 #print(atype+" "+name+" "+values+" "+doc)
                 line_count = line_count + 1
             except:
-                print(traceback.print_exc(sys.exc_info()))
+                #print(traceback.print_exc(sys.exc_info()))
                 print("Error Loading Data on Line "+str(line_count))
                 error_count = error_count + 1
                 pass
@@ -330,12 +286,13 @@ def parse_artifacts():
 
 def separate_into_named_lists(): #Add lists for other types, etc
     print("Separating Data..\n")
-    global registry_keys, registry_values, files, commands, directories
+    global registry_keys, registry_values, files, commands, directories, wmic_cmds, count_reg_keys, count_reg_values, count_files, count_commands, count_directories, count_wmic_cmds
     registry_keys = []
     registry_values = []
     files = []
     commands = []
     directories = []
+    wmic_cmds = []
 
     for key, value in type_dict.items(): #Rename according to proper artifact names, add other artifact types
         if value == "REGISTRY_KEY":
@@ -348,11 +305,14 @@ def separate_into_named_lists(): #Add lists for other types, etc
             commands.append(key)
         elif value == "DIRECTORY":
             directories.append(key)
+        elif value == "WMI":
+            wmic_cmds.append(key)
     count_reg_keys = 0
     count_reg_values = 0
     count_files = 0
     count_commands = 0
     count_directories = 0
+    count_wmic_cmds = 0 
     for item in registry_keys:
         count_reg_keys = count_reg_keys + 1
     for item in registry_values:
@@ -363,11 +323,14 @@ def separate_into_named_lists(): #Add lists for other types, etc
         count_commands = count_commands + 1
     for item in directories:
         count_directories = count_directories + 1
+    for item in wmic_cmds:
+        count_wmic_cmds = count_wmic_cmds + 1
     print("REGISTRY KEY ENTRIES : "+str(count_reg_keys)) #Add print for other types
     print("REGISTRY VALUE ENTRIES : "+str(count_reg_values))
     print("FILE ENTRIES : "+str(count_files))
     print("COMMAND ENTRIES : "+str(count_commands))
     print("DIRECTORY ENTRIES : "+str(count_directories))
+    print("WMI QUERIES : "+str(count_wmic_cmds))
 
 
 def check_dir_contents(directory, artifact_name, iteration):#Send directory path to WMI Session for 'dir' execution
@@ -378,31 +341,31 @@ def check_dir_contents(directory, artifact_name, iteration):#Send directory path
         command = "dir /s "+directory
     else:
         command = "dir "+directory
-    rem_con.execute(command, artifact_name, iteration, ".txt")
+    rem_con.execute(command, artifact_name, iteration)
 
 def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:VALUE pair to WMI Session to extract value if exists
-    print("Examining Registry Value : "+reg_key+":"+reg_val)
+    #print("Examining Registry Value : "+reg_key+":"+reg_val)
     if "*" in reg_key:
-        print("TO DO WILDCARD HANDLING")
+        #print("TO DO WILDCARD HANDLING")
+        pass
     else:
         command = "reg query \""+reg_key+"\" /v "+reg_val
-        command = command.replace("HKEY_LOCAL_MACHINE", "HKLM").replace("HKEY_USERS", "HKU")
-        rem_con.execute(command, artifact_name, iteration, ".txt")
+        command = command.replace("HKEY_LOCAL_MACHINE", "HKLM").replace("HKEY_USERS", "HKU").replace("HKEY_CURRENT_USER", "HKCU")
+        rem_con.execute(command, artifact_name, iteration)
 
 def gather_file(file_name, artifact_name, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
     if "*" in file_name:
-        print("TO DO WILDCARD HANDLING")
+        #print("TO DO WILDCARD HANDLING")
+        pass
     else:
         print("Copying File : "+file_name)
-        name, extension = os.path.splitext(file_name)
-        command = "copy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\Paychex_Temp_SIU"
-        rem_con.execute(command, artifact_name, iteration, extension)
+        #name, extension = os.path.splitext(file_name)
+        command = "copy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS"
+        rem_con.execute(command, artifact_name, iteration)
 
 def run_command(command, artifact_name, iteration):
-    command = command
-    extension = ".txt"
     print("Running Command : "+command)
-    rem_con.execute(command, artifact_name, iteration, extension)
+    rem_con.execute(command, artifact_name, iteration)
 
         #Add handler functions for other types
 main()

@@ -1,9 +1,10 @@
-import subprocess, traceback, sys, wmi, subprocess, win32api, winreg
+import subprocess, traceback, sys, wmi, subprocess, win32api, winreg, os
 
 class connector(): #Create, Execute, Destroy.
 
     def __init__(self, target, credential, password, user, domain):
         print("Connector Initiated..\n")
+        self.execution_label = target+"["+user+"]"
         self.target = target
         self.credential = credential
         self.password = password
@@ -12,12 +13,13 @@ class connector(): #Create, Execute, Destroy.
         self.root = " "
         self.envroot = " "
 
+
     def create_session(self): #Establish WMI Connection - will play with WinRM in future..
         print("Target : "+self.target)
         print("User Target : "+self.user)
         print("Using Credential : "+self.credential)
         #session = winrm.Session(target, auth=(credential, password), transport='kerberos') #WinRM would be easier but would require setup/touching machine in ways I don't want to.
-        self.session = wmi.WMI(self.target, user=self.credential, password=self.password)
+        self.session = wmi.WMI(computer=self.target, user=self.credential, password=self.password)
 
 
     def get_sid(self): #Trying a few different ways to get SID
@@ -51,8 +53,8 @@ class connector(): #Create, Execute, Destroy.
         try:
             profiles.sort(reverse=True) #Will fail on NoneType collections
             print("Listing All Detected Profiles..")
-            for p in profiles:
-                print(p)
+            for profile in profiles:
+                print(profile)
         except:
             print("ERROR listing all profiles..no big deal..")
         return(target_sid, user_path)
@@ -66,13 +68,13 @@ class connector(): #Create, Execute, Destroy.
             return item.WindowsDirectory
 
     def write_default(self): #Prepare folder for copying/writing/exporting artifacts
-        command = "mkdir "+self.envroot+":\\Users\\"+self.user+"\Paychex_Temp_SIU" #Try to use envroot
+        command = "mkdir "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS" #Try to use envroot
         print("Running : "+command)
         process_id, return_value = self.session.Win32_Process.Create(CommandLine="cmd.exe /c "+command)
         if return_value != 0:
-            print("Failed to create "+self.envroot+":\\Users\\"+self.user+"\Paychex_Temp_SIU' Directory..")
-            print("Trying to create in "+self.user_path[0]+":\\Users\\"+self.user+"\Paychex_Temp_SIU")
-            command = "mkdir "+self.user_path[0]+":\\Users\\"+self.user+"\Paychex_Temp_SIU" #Use slice from detected user path
+            print("Failed to create "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS' Directory..")
+            print("Trying to create in "+self.user_path[0]+":\\Users\\"+self.credential+"\TEMPARTIFACTS")
+            command = "mkdir "+self.user_path[0]+":\\Users\\"+self.user+"\TEMPARTIFACTS" #Use slice from detected user path
             print("Running : "+command)
             process_id, return_value = self.session.Win32_Process.Create(CommandLine="cmd.exe /c "+command)
             if return_value !=0: #NEED a directory, if we can't write, quit.
@@ -80,15 +82,29 @@ class connector(): #Create, Execute, Destroy.
                 print(traceback.print_exc(sys.exc_info()))
                 exit(0)
 
-    def execute(self, command, artifact_name, iteration, extension):#Run Command on Remote Host
+    def execute(self, command, artifact_name, iteration):#Run Command on Remote Host
         show_window = 0
         process_startup = self.session.Win32_ProcessStartup.new()
         process_startup.ShowWindow = show_window #Hide Window
         #file_name = command.replace("/","_").replace(" ", "_").replace("\\", "_").replace(":","_").replace("<","_").replace(">","_") #Initial Naming Idea
-        process_id, return_value = self.session.Win32_Process.Create(CommandLine=r"cmd.exe /c "+command+" >> "+self.envroot+":\\Users\\"+self.user+"\Paychex_Temp_SIU\\"+artifact_name+str(iteration)+extension, ProcessStartupInformation=process_startup)
-        #test = subprocess.check_output(["ipconfig", "/all"])
-        print("Command Executed: cmd.exe /c "+command+" >> "+self.envroot+":\\Users\\"+self.user+"\Paychex_Temp_SIU\\"+artifact_name+str(iteration)+extension)
-        print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
+        #print(command)
+        if "wmic" in command:
+            #command = command.replace("wmic", "wmic /output:"+self.envroot+":\\Users\\"+self.user+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt")
+            #command = "cmd.exe /c "+"\""+command+"\""+" > \""+self.envroot+":\\Users\\"+self.user+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt\""
+            command = command.replace("wmic","")
+            command = "wmic /node:\""+self.target+"\" /user:"+self.credential+" /password:"+self.password+" "+command+" > "+self.execution_label+"-data\\"+artifact_name+".txt"  
+            result = subprocess.getoutput(command)
+            with open(self.execution_label+"-data\\"+artifact_name+".txt", 'a+') as f:
+                f.write(result)
+            command = command.replace(self.password, "XXXXXXXX")
+            print("Process Executed: "+command)
+            print(result)
+            #process_id, return_value = self.session.Win32_Process.Create(CommandLine=command, ProcessStartupInformation=process_startup)
+            #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
+        else:
+            process_id, return_value = self.session.Win32_Process.Create(CommandLine=("cmd.exe /c "+command+" > "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt"), ProcessStartupInformation=process_startup)
+            #print("Process Executed: cmd.exe /c "+command+" > "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt")
+            #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
 
     def disconnect(self):
         try:
