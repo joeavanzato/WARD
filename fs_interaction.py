@@ -1,8 +1,9 @@
-import yaml, os, datetime, tqdm, ctypes, sys, time, colorama, traceback, config
+import yaml, os, datetime, tqdm, ctypes, sys, time, colorama, traceback, config, subprocess
+global log_buddy
 
 class log_writer(): #Responsible for writing data to error/execution logs
 
-    def __init__(self):
+    def __init__(self): 
         #print("Log Writer Instantiated..")
         self.execution_log = config.execution_log
         self.error_log = config.error_log
@@ -17,9 +18,32 @@ class log_writer(): #Responsible for writing data to error/execution logs
             with open(self.execution_log, 'a+') as f:
                 f.write(str(datetime.datetime.now())+" "+data)
 
-
+def copy_from_host():
+    print("Copying TEMPARTIFACTS from "+config.target+" to Local Host..")
+    dir_name = '\\\\'+str(config.target)+"\\"
+    log_buddy.write_log("Execution", "COPYING REMOTE TEMPARTIFACTS DIR TO LOCAL HOST..")
+    try:
+        command = "xcopy "+dir_name+config.system_root+":\\Users\\"+config.elevated_username+"\TEMPARTIFACTS "+config.execution_label+"-data\\files /Y/H/S"
+        print("RUNNING : "+command)
+        cmd_result = subprocess.run(command, shell=True)
+    except:
+        pass
+    try:
+        command = "xcopy "+dir_name+config.system_root+"\\Users\\"+config.elevated_username+"\TEMPARTIFACTS "+config.execution_label+"-data\\files /Y/H/S"
+        print("RUNNING : "+command)
+        cmd_result = subprocess.run(command, shell=True)
+    except:
+        pass
+    try:
+        command = "xcopy "+dir_name+config.system_root+"$\\Users\\"+config.elevated_username+"\TEMPARTIFACTS\ "+config.execution_label+"-data\\files /Y/H/S"
+        print("RUNNING : "+command)
+        cmd_result = subprocess.run(command, shell=True)
+    except:
+        print(traceback.print_exc(sys.exc_info()))
+        pass
 
 def read_yaml_data(data, artifact_file):#Responsible for parsing YAML data structures within folder and some basic replacement with things I found worked
+    global log_buddy
     import read_replacer
     replacer = read_replacer.replacer()
     yaml_data_folder = data #Name of folder storing .yaml artifact signatures

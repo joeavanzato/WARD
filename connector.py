@@ -114,7 +114,7 @@ class connector(): #Create, Execute, Destroy.
             #print("\n"+command)
             #with open(self.execution_label+"-data\\"+artifact_name+".txt", 'a+') as f:
             #    f.write(str(result))
-            command = command.replace(self.password, "XXXXXXXX")
+            #command = command.replace(self.password, "XXXXXXXX")
             #print("Process Executed: "+command)
             #print(result)
             #process_id, return_value = self.session.Win32_Process.Create(CommandLine=command, ProcessStartupInformation=process_startup)

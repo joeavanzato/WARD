@@ -1,4 +1,5 @@
 cur_dir = ""
+domain = ""
 user_sid = ""
 user_path = ""
 system_root = ""

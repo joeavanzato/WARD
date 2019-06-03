@@ -4,15 +4,21 @@ parser.add_argument("-t", "--target", help='Specify Target Host Name or IP Addre
 parser.add_argument("-c", "--credential", help='Specify UID to Connect VIA', required = True) #Credential/UserName for Access
 parser.add_argument("-u", "--user_target", help='Specify UID to Target', required = True) #Target User for Analysis
 parser.add_argument("-l", "--local", help='Ignores target if specified, operates on local host', required = False, action="store_true") #Target User for Analysis
-parser.add_argument("-d", "--admin", help='Use if running in Domain Administrator cmdline environment', required = False, action="store_true") #If admin, can use winreg on local/direct WMI, else need to authenticate and perform on remote. Does Nothing Yet..
-parser.add_argument("-build", "--build", help='Use to build artifacts.csv from YAML Data', required = False, action="store_true") 
+parser.add_argument("-a", "--admin", help='Use if running in Domain Administrator cmdline environment', required = False, action="store_true") #If admin, can use winreg on local/direct WMI, else need to authenticate and perform on remote. Does Nothing Yet..
+parser.add_argument("-b", "--build", help='Use to build artifacts.csv from YAML Data', required = False, action="store_true") 
 parser.add_argument("-p", "--password", help='Use with -c to avoid password prompts and execute wmic with /password: flag in cmdline', required=False)
+parser.add_argument("-d", "--domain", help="Provide domain name if working within one", required=False)
+args = parser.parse_args()
 
+#print(traceback.print_exc(sys.exc_info()))
+#TO DO - Make user_target non-required and just iterate through all detected users on system - should be fairly simple.
+#TO DO - Implement Operation on Local Host
+#TO DO - Implement checks based on 'admin' flag that will use winreg locally to enumerate reg keys/values instead of remote execution/collection
 #TO DO - Add Recursive Registry/File Copy Support, Ensure Integrity that actions reported are actually occurring, build out log writing
+#Implement VSS Shadow Copy to pull 'in use' files?  Or something else?  Hmm...maybe look at Active Shadow Copy and pull out of that?
 
 
 global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, log_buddy, cur_dir, elevated_password
-args = parser.parse_args()
 current_datetime = datetime.datetime.now()
 target = args.target
 cur_dir = os.getcwd()
@@ -23,12 +29,17 @@ build = args.build
 if args.password is not None:
     elevated_password = args.password
     config.elevated_password = elevated_password
+if args.domain is not None:
+    domain = args.domain
+    config.domain = domain
+else:
+    domain = ""
 execution_label = target+"["+user_target+"]"
 artifact_file=execution_label+"-data/artifacts.csv" #Input Artifact File in format "TYPE, NAME, ; separated VALUES, DOCUMENTATION
 execution_log=execution_label+"-logs/execution_log.txt"
 error_log=execution_label+"-logs/error_log.txt"
 yaml_data_folder = "yamldata" #Name of folder storing .yaml artifact signatures
-domain = "PAYCHEX"
+
 kernel32 = ctypes.windll.kernel32
 config.cur_dir = cur_dir
 config.target = target
@@ -36,7 +47,6 @@ config.elevated_username = elevated_username
 config.user_target = user_target
 config.admin_priv = admin_priv
 config.build = build
-config.domain = domain
 config.yaml_data_folder = yaml_data_folder
 config.execution_label= execution_label
 config.artifact_file = artifact_file
@@ -64,7 +74,8 @@ def main():#Because every tool has ASCII art, right?
     separate_into_named_lists() #Separate the gathered data into various lists
     establish_connection() #Prepare Connection to Remote Host
     test_connection() #Verify working connection with ipconfig
-    parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
+    #parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
+    #fs_interaction.copy_from_host() #Copy all collected artifacts from target to localhost
 
 
 
@@ -117,7 +128,9 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
         config.win_def = win_def
         log_buddy.write_log("Execution","FOUND USER SID: "+user_sid)
         log_buddy.write_log("Execution","FOUND USER PATH: "+user_path)
-        log_buddy.write_log("Execution","CALCULATING USER DIR: "+user_sid)
+        log_buddy.write_log("Execution","CALCULATED USER DIR: "+user_sid)
+        log_buddy.write_log("Execution","CALCULATED USER APPDATA DIR: "+user_appdata_dir)
+        log_buddy.write_log("Execution","CALCULATED USER APPDATA DIR: "+user_appdata_dir)
     except:#NEED SID for real functionality
         print("CRITICAL ERROR Getting Target User SID..")
         log_buddy.write_log("Error","CRITICAL ERROR Getting Target User SID..")
