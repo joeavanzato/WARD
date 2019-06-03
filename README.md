@@ -31,9 +31,15 @@ Log/Data folders are output in the format 'TARGETMACHINE'[TARGETUSER]'.  A targe
 
 
 DEPENDENCIES
+
 -YAML - For reading input data.
+
 -TQDM - Pretty Progress Bars.
+
 -COLORAMA - Might remove, was used to help implement TQDM
+
 -WMI - Implement Windows Management Instrumentation functionality in native Python
+
 -PyWin32
+
 -ArgParse
