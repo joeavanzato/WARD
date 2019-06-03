@@ -18,6 +18,8 @@ Usage:
   
   -u (User Target) - Specify User Target on Remote Host, will add userless option to collect ALL local user data
   
+  -l (Local) - Switch operation from Remote to Local, Ignore -t Arguments
+  
   -a (Admin?) - Toggle for running from Elevated User Prompt on local PC to avoid password prompting and use more local functionality
   
   
