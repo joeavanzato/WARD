@@ -47,8 +47,8 @@ class connector(): #Create, Execute, Destroy.
                 target_sid = user.SID
                 user_path = user.LocalPath
                 self.user_path = user.LocalPath
-                print(user.LocalPath)
-                print(target_sid)
+                print("User Path : "+user.LocalPath)
+                print("User SID : "+target_sid)
             profiles.append((user.LastUseTime, user.SID, user.LocalPath))
         try:
             profiles.sort(reverse=True) #Will fail on NoneType collections
@@ -56,16 +56,18 @@ class connector(): #Create, Execute, Destroy.
             for profile in profiles:
                 print(profile)
         except:
-            print("ERROR listing all profiles..no big deal..")
+            print("SOFT ERROR Listing All User Profiles..")
         return(target_sid, user_path)
 
     def get_windir(self): #Gets default Windows Directory and by extension environment root
-        for item in self.session.Win32_OperatingSystem():
-            print(item)
-            self.root = item.WindowsDirectory
-            self.envroot = item.WindowsDirectory[0]
-            print(self.root, self.envroot)
-            return item.WindowsDirectory
+        with open(config.cur_dir+"\\"+config.execution_label+r"-data\files\Win32_OS.txt", "w+") as f:
+            for item in self.session.Win32_OperatingSystem():
+                f.write(str(item))
+                print(item)
+                self.root = item.WindowsDirectory
+                self.envroot = item.WindowsDirectory[0]
+                #print(self.root, self.envroot)
+                return item.WindowsDirectory
 
     def write_default(self): #Prepare folder for copying/writing/exporting artifacts
         command = "mkdir "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS" #Try to use envroot
@@ -93,11 +95,12 @@ class connector(): #Create, Execute, Destroy.
             #command = "cmd.exe /c "+"\""+command+"\""+" > \""+self.envroot+":\\Users\\"+self.user+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt\""
             command = command.replace("wmic","")
             command = "wmic /node:\""+self.target+"\" /user:"+self.credential+" /password:"+self.password+" "+command+" > "+self.execution_label+"-data\\"+artifact_name+".txt"  
+            #print("\n"+command)
             result = subprocess.getoutput(command)
             with open(self.execution_label+"-data\\"+artifact_name+".txt", 'a+') as f:
-                f.write(result)
+                f.write(str(result))
             command = command.replace(self.password, "XXXXXXXX")
-            print("Process Executed: "+command)
+            #print("Process Executed: "+command)
             print(result)
             #process_id, return_value = self.session.Win32_Process.Create(CommandLine=command, ProcessStartupInformation=process_startup)
             #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
@@ -107,24 +110,45 @@ class connector(): #Create, Execute, Destroy.
             #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
 
     def connect_drive(self):
+        x = 0
         try:
-            print("Trying to Map Target Drive..")
-            if self.domain == "":
-                subprocess.call(r'net use \\'+"\""+self.target+"\\"+config.system_root+" /u:"+self.credential, shell=True)
-                self.log_buddy.write_log('Execution', r'EXECUTED net use \\'+"\""+self.target+"\C /u:"+self.credential)
-            else:
-                subprocess.call(r'net use \\'+"\""+self.target+"\\"+config.system_root+" /u:"+self.domain+"\\"+self.credential, shell=True)
-                self.log_buddy.write_log('Execution', r'EXECUTED net use \\'+"\""+self.target+"\C /u:"+self.domain+"\\"+self.credential)
-            print("Mapped Target Drive..")
+            command = "net view"
+            cmd_result = subprocess.getoutput(command)
+            #print(cmd_result)
+            #print(type(cmd_result))
+            if self.target.lower() in cmd_result.lower():
+                print("DRIVE ALREADY MAPPED")
+                x = 1
+            return cmd_result
         except:
-            print("Failed to Open Connection")
+            print("ERROR running net view, need admin priveliges?")
             print(traceback.print_exc(sys.exc_info()))
-            exit(0)
+            tb = traceback.format_exc()
+            log_buddy.write_log("Error",str(tb))
+        if x != 1:
+            try:
+                print("Trying to Map Target Drive..")
+                if self.domain == "":
+                    print("EXECUTING : net use \\\\"+self.target+"\\"+config.system_root+" /u:"+self.credential)
+                    command = "net use \\\\"+self.target+"\\"+config.system_root+" /u:"+self.credential
+                    self.log_buddy.write_log('Execution', command)
+                    cmd_result = subprocess.getoutput(command, shell=True)
+                else:
+                    print("EXECUTING : net use \\\\"+self.target+"\\"+config.system_root+" /u:"+self.domain+"\\"+self.credential)
+                    self.log_buddy.write_log('Execution', 'EXECUTED net use \\\\'+self.target+"\\"+config.system_root+" /u:"+self.domain+"\\"+self.credential)
+                    cmd_result = subprocess.getoutput("net use \\\\\""+self.target+"\\"+config.system_root+"\" /u:"+self.domain+"\\"+self.credential, shell=True)
+                print("Mapped Target Drive..")
+                return cmd_result
+            except:
+                print("ERROR Failed to Open Connection, Last Ran Command Logged to Error Log..")
+                print(traceback.print_exc(sys.exc_info()))
+                exit(0)
+
 
     def disconnect_drive(self):
         try:
             print("Trying to Remove Mapped Target Drive")
-            subprocess.call(r'net use \\'+self.target+"\\"+config.system_root+" /delete", shell=True)
+            cmd_result = subprocess.getoutput(r'net use \\\\'+self.target+"\\"+config.system_root+" /delete", shell=True)
             print("UnMapped Target Drive..")
         except:
             print("Failed to Close Connection")

@@ -1,4 +1,4 @@
-
+cur_dir = ""
 user_sid = ""
 user_path = ""
 system_root = ""
