@@ -478,19 +478,37 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
 
 def gather_file(file_name, artifact_name, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
     if "*" in file_name:
+        print(file_name)
         #print("TO DO WILDCARD HANDLING")
-        if "*" == file_name[-1:]:
+        try:
+            file, ext = os.path.splitexe(file_name)
+            split = 1
+        except:
+            split = 0
+        x = 0
+        for character in file_name:
+            if character == "*":
+                print(str(x))
+                wc_position = x
+                break
+            x = x + 1
+        #if "*" == file_name[-1:]:
             #print("Doing Full Recursive Copy..")
-            file_name = file_name.replace("*","")
+        file_name = file_name.replace("**","*")
+        file_name = file_name.replace(":","")
+        file_name = '\\\\'+str(target)+"\\"+file_name
+        #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5"
+        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
 
-        pass
+
     else:
         #print("Copying File : "+file_name)
         #name, extension = os.path.splitext(file_name)
         file_name = file_name.replace(":","")
         file_name = '\\\\'+str(target)+"\\"+file_name
-        command = "copy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS" #Remote
-        #command = "copy "+file_name+" "+cur_dir+"\\"+execution_label+r"-data\files" #Local
+        #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5" #Remote - Useful for running when not on domains
+        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
+        #command = "copy "+file_name+" "+cur_dir+"\\"+execution_label+r"-data\files" #Local - Better for domains, copy via domain account permissions
         #command_split = command.split(" ")
         #print("\nEXECUTING : "+command)
         #cmd_result = subprocess.run(command, shell=True)
