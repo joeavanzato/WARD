@@ -13,6 +13,10 @@ class connector(): #Create, Execute, Destroy.
         self.root = " "
         self.envroot = " "
         self.log_buddy = fs_interaction.log_writer()
+        if config.elevated_password:
+            self.provided = 1
+        else:
+            self.provided = 0
 
     def create_session(self): #Establish WMI Connection - will play with WinRM in future..
         print("Target : "+self.target)
@@ -63,7 +67,7 @@ class connector(): #Create, Execute, Destroy.
         with open(config.cur_dir+"\\"+config.execution_label+r"-data\files\Win32_OS.txt", "w+") as f:
             for item in self.session.Win32_OperatingSystem():
                 f.write(str(item))
-                print(item)
+                #print(item)
                 self.root = item.WindowsDirectory
                 self.envroot = item.WindowsDirectory[0]
                 return item.WindowsDirectory
@@ -83,6 +87,8 @@ class connector(): #Create, Execute, Destroy.
                 print(traceback.print_exc(sys.exc_info()))
                 exit(0)
 
+    #Passwords - Either you don't provide it initially via -p XXX then provide it to connect via WMI then either DONT pass to each WMIC and individually enter or DO pass to each WMI
+    #Alternative is provide initially via -p XXX then DO or DONT provide to each WMIC -> although likely in this case you wouldn't care and would provide it regardless
     def execute(self, command, artifact_name, iteration):#Run Command on Remote Host
         show_window = 0
         process_startup = self.session.Win32_ProcessStartup.new()
@@ -93,20 +99,28 @@ class connector(): #Create, Execute, Destroy.
             #command = command.replace("wmic", "wmic /output:"+self.envroot+":\\Users\\"+self.user+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt")
             #command = "cmd.exe /c "+"\""+command+"\""+" > \""+self.envroot+":\\Users\\"+self.user+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt\""
             command = command.replace("wmic","")
-            command = "wmic /node:\""+self.target+"\" /user:"+self.credential+" /password:"+self.password+" "+command+" > "+self.execution_label+"-data\\"+artifact_name+".txt"  
+            if self.provided == 0:
+                command = "wmic /node:\""+self.target+"\" /user:"+self.credential+" "+command+" > "+self.execution_label+"-data\\"+artifact_name+".txt"
+                command_censored = command.replace(self.password, "****").replace("wmic", "echo wmic")
+                result_filt = subprocess.getoutput(command_censored)
+                result = subprocess.getoutput(command)
+                print("Enter Password for "+self.credential+":")
+            elif self.provided == 1:
+                #command = "wmic /node:\""+self.target+"\" /user:"+self.credential+" /password:"+self.password+" "+command+" > "+self.execution_label+"-data\\"+artifact_name+".txt" #STDOUT to File
+                command = "wmic /output:\""+self.execution_label+"-data\\"+artifact_name+".txt\" /node:\""+self.target+"\" /user:"+self.credential+" /password:"+self.password+" "+command #/output flag in WMIC testing
+                command_censored = command.replace(self.password, "****").replace("wmic", "echo wmic")
+                result_filt = subprocess.getoutput(command_censored)
+                result = subprocess.getoutput(command)#With PW
             #print("\n"+command)
-            command_censored = command.replace(self.password, "****").replace("wmic", "echo wmic")
-            result_filt = subprocess.getoutput(command_censored)
-            result = subprocess.getoutput(command)
             #with open(self.execution_label+"-data\\"+artifact_name+".txt", 'a+') as f:
             #    f.write(str(result))
-
             command = command.replace(self.password, "XXXXXXXX")
             #print("Process Executed: "+command)
-            print(result)
+            #print(result)
             #process_id, return_value = self.session.Win32_Process.Create(CommandLine=command, ProcessStartupInformation=process_startup)
             #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
-        else:
+        else:#Everything except WMIC commands
+            #Running echo shadow command then actual command
             process_id, return_value = self.session.Win32_Process.Create(CommandLine=("cmd.exe /c echo "+command+" >> "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt"), ProcessStartupInformation=process_startup)
             process_id, return_value = self.session.Win32_Process.Create(CommandLine=("cmd.exe /c "+command+" >> "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt"), ProcessStartupInformation=process_startup)
             #print("Process Executed: cmd.exe /c "+command+" > "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt")
@@ -114,6 +128,7 @@ class connector(): #Create, Execute, Destroy.
 
     def connect_drive(self):
         x = 0
+        y = 0
         try:
             command = "net view"
             cmd_result = subprocess.getoutput(command)
@@ -122,22 +137,25 @@ class connector(): #Create, Execute, Destroy.
                 x = 1
             return cmd_result
         except:
+            y = 1
             print("ERROR running net view, need admin priveliges?")
             print(traceback.print_exc(sys.exc_info()))
             tb = traceback.format_exc()
             log_buddy.write_log("Error",str(tb))
-        if x != 1:
+        if (x == 0) or (y==1):
             try:
                 print("Trying to Map Target Drive..")
                 if self.domain == "":
                     print("EXECUTING : net use \\\\"+self.target+"\\"+config.system_root+" /u:"+self.credential)
                     command = "net use \\\\"+self.target+"\\"+config.system_root+" /u:"+self.credential
                     self.log_buddy.write_log('Execution', command)
-                    cmd_result = subprocess.getoutput(command, shell=True)
+                    cmd_result = subprocess.getoutput(command)
                 else:
-                    print("EXECUTING : net use \\\\"+self.target+"\\"+config.system_root+" /u:"+self.domain+"\\"+self.credential)
-                    self.log_buddy.write_log('Execution', 'EXECUTED net use \\\\'+self.target+"\\"+config.system_root+" /u:"+self.domain+"\\"+self.credential)
-                    cmd_result = subprocess.getoutput("net use \\\\\""+self.target+"\\"+config.system_root+"\" /u:"+self.domain+"\\"+self.credential, shell=True)
+                    print("EXECUTING : net use \\\\"+self.target+"\\"+config.system_root+"$ /u:"+self.domain+"\\"+self.credential)
+                    self.log_buddy.write_log('Execution', 'EXECUTED net use \\\\'+self.target+"\\"+config.system_root+"$ /u:"+self.domain+"\\"+self.credential) #why $ vs no $
+                    command = ['net', 'use', "\\\\"+self.target+"\\"+config.system_root+"$", "/u:"+self.domain+"\\"+self.credential]
+                    #cmd_result = subprocess.run("net use \\\\\""+self.target+"\\"+config.system_root+"$\" /u:"+self.domain+"\\"+self.credential, shell=True
+                    cmd_result = subprocess.run(command, shell=True)
                 print("Mapped Target Drive..")
                 return cmd_result
             except:

@@ -174,13 +174,13 @@ def setup_log_file(execution_label, error_log, execution_log):#Creates error/exe
         print("ERROR "+execution_label+r"-data\files directory already exists or lacking permissions..")
     mode = 'a' if os.path.exists(error_log) else 'w'
     with open(error_log, mode):
-        print("Error Log Created..")
+        print("Error Log Created or Already Exists..")
     mode = 'a' if os.path.exists(execution_log) else 'w'
     with open(execution_log, mode):
-        print("Execution Log Created..")
+        print("Execution Log Created or Already Exists..")
     with open(execution_log, 'w+') as f:
-        f.write(str(datetime.datetime.now())+" "+execution_label+"-'log' Directory Created..\n")
-        f.write(str(datetime.datetime.now())+" "+execution_label+"-'data' Directory Created..\n")
-        f.write(str(datetime.datetime.now())+" "+"Error Log Created..\n")
-        f.write(str(datetime.datetime.now())+" "+"Execution Log Created..\n")
+        f.write(str(datetime.datetime.now())+" "+execution_label+"-'log' Directory Created or Already Exists..\n")
+        f.write(str(datetime.datetime.now())+" "+execution_label+"-'data' Directory Created or Already Exists..\n")
+        f.write(str(datetime.datetime.now())+" "+"Error Log Created or Already Exists..\n")
+        f.write(str(datetime.datetime.now())+" "+"Execution Log Created or Already Exists..\n")
         

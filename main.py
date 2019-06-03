@@ -1,16 +1,17 @@
-import csv, time, sys, argparse, win32api, win32net, traceback, connector, getpass, wmi, os, fs_interaction, config, read_replacer, datetime, tqdm, ctypes, colorama, time, subprocess
-parser = argparse.ArgumentParser(usage = '\n Remote Artifact Analysis and Retrieval\n  -t -- [Target Host-Name or IP Address (Only One)]\n -c -- UserName to Connect Via (Alt Account)\n  -u -- Target User Name to Inspect\n -build -- Use to Unpack YAML data into Artifact.csv on first run or update \n -l -- Use to indicate operation on Local Host')
+import csv, time, sys, argparse, win32api, win32net, traceback, connector, getpass, wmi, os, fs_interaction, config, stringops, read_replacer, datetime, tqdm, ctypes, colorama, time, subprocess
+parser = argparse.ArgumentParser(usage = '\n Remote Artifact Analysis and Retrieval\n -t -- [Target Host-Name or IP Address (Only One)]\n -c -- UserName to Connect Via (Alt Account)\n -u -- Target User Name to Inspect\n -build -- Use to Unpack YAML data into Artifact.csv on first run or update \n -l -- Use to indicate operation on Local Host')
 parser.add_argument("-t", "--target", help='Specify Target Host Name or IP Address', required = True) #Target machine
 parser.add_argument("-c", "--credential", help='Specify UID to Connect VIA', required = True) #Credential/UserName for Access
 parser.add_argument("-u", "--user_target", help='Specify UID to Target', required = True) #Target User for Analysis
 parser.add_argument("-l", "--local", help='Ignores target if specified, operates on local host', required = False, action="store_true") #Target User for Analysis
-parser.add_argument("-a", "--admin", help='Use if running in alt/administrator cmdline', required = False, action="store_true") #If admin, can use winreg on local/direct WMI, else need to authenticate and perform on remote. Does Nothing Yet..
+parser.add_argument("-d", "--admin", help='Use if running in Domain Administrator cmdline environment', required = False, action="store_true") #If admin, can use winreg on local/direct WMI, else need to authenticate and perform on remote. Does Nothing Yet..
 parser.add_argument("-build", "--build", help='Use to build artifacts.csv from YAML Data', required = False, action="store_true") 
+parser.add_argument("-p", "--password", help='Use with -c to avoid password prompts and execute wmic with /password: flag in cmdline', required=False)
 
 #TO DO - Add Recursive Registry/File Copy Support, Ensure Integrity that actions reported are actually occurring, build out log writing
 
 
-global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, log_buddy, cur_dir
+global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, log_buddy, cur_dir, elevated_password
 args = parser.parse_args()
 current_datetime = datetime.datetime.now()
 target = args.target
@@ -19,12 +20,15 @@ elevated_username = args.credential
 user_target = args.user_target
 admin_priv = args.admin
 build = args.build
+if args.password is not None:
+    elevated_password = args.password
+    config.elevated_password = elevated_password
 execution_label = target+"["+user_target+"]"
 artifact_file=execution_label+"-data/artifacts.csv" #Input Artifact File in format "TYPE, NAME, ; separated VALUES, DOCUMENTATION
 execution_log=execution_label+"-logs/execution_log.txt"
 error_log=execution_label+"-logs/error_log.txt"
 yaml_data_folder = "yamldata" #Name of folder storing .yaml artifact signatures
-domain = ""
+domain = "PAYCHEX"
 kernel32 = ctypes.windll.kernel32
 config.cur_dir = cur_dir
 config.target = target
@@ -69,14 +73,15 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
     global rem_con, user_sid, user_path, system_root, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, win_dir, win_def
     print("\nBuilding Remote Connection..\n")
     try:
-        if admin_priv == False:
+        if args.password is None:
             log_buddy.write_log("Execution", "PROMPTING FOR PASSWORD")
             password = getpass.getpass(prompt="Password for "+elevated_username+":")
             log_buddy.write_log("Execution", "RECEIVED PASSWORD FROM USER")
             log_buddy.write_log("Execution", "CREATING OBJECT Connector.Connector")
             rem_con = connector.connector(target, elevated_username, password, user_target, domain)
         else:
-            rem_con = connector.connector(target, elevated_username, password, user_target, domain)
+            log_buddy.write_log("Execution", "PASSWORD PROVIDED AT STARTUP")
+            rem_con = connector.connector(target, elevated_username, elevated_password, user_target, domain)
     except:
         print("CRITICAL ERROR Instantiating Connector.Connector")
         log_buddy.write_log("Error","CRITICAL ERROR Instantiating Connector.Connector")
@@ -110,6 +115,9 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
         config.user_temp_dir = user_temp_dir
         win_def = 0
         config.win_def = win_def
+        log_buddy.write_log("Execution","FOUND USER SID: "+user_sid)
+        log_buddy.write_log("Execution","FOUND USER PATH: "+user_path)
+        log_buddy.write_log("Execution","CALCULATING USER DIR: "+user_sid)
     except:#NEED SID for real functionality
         print("CRITICAL ERROR Getting Target User SID..")
         log_buddy.write_log("Error","CRITICAL ERROR Getting Target User SID..")
@@ -121,8 +129,8 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
         log_buddy.write_log("Execution","CHECKING FOR WINDIR DEFAULT LOCATION")
         win_dir = rem_con.get_windir()
         config.win_dir = win_dir
-        print("Found WINDIR at "+win_dir)
-        log_buddy.write_log("Execution","FOUND DEFAULT WINDIR AT"+win_dir)
+        print("Found WINDIR : "+win_dir)
+        log_buddy.write_log("Execution","FOUND DEFAULT WINDIR: "+win_dir)
     except:
         win_def = 1
         config.win_def = win_def
@@ -144,16 +152,16 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
     try:
         print("Mapping Network Drive..")
         result = rem_con.connect_drive()
-        print(result)
-        log_buddy.write_log("Execution", result)
-        if ("The command completed successfully." in str(result)):
-            pass
-        else:
-            print("CRITICAL ERROR Mapping Network Drive")
-            log_buddy.write_log("Error","CRITICAL ERROR Mapping Network Drive")
-            tb = traceback.format_exc()
-            log_buddy.write_log("Error",str(tb))
-            exit(0)
+        #print(result)
+        log_buddy.write_log("Execution", target+" SUCCESSFULLY MAPPED")
+        #if ("The command completed successfully." in str(result)): #RE DO THIS SECTION
+        #    pass
+        #else:
+        #    print("CRITICAL ERROR Mapping Network Drive")
+        #    log_buddy.write_log("Error","CRITICAL ERROR Mapping Network Drive")
+        #    tb = traceback.format_exc()
+        #    log_buddy.write_log("Error",str(tb))
+        #    exit(0)
     except:
         print("CRITICAL ERROR Mapping Network Drive")
         log_buddy.write_log("Error","CRITICAL ERROR Mapping Network Drive")
@@ -167,6 +175,7 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
     try:
         log_buddy.write_log("Execution","EXECUTING 'ipconfig /all' ON "+target)
         rem_con.execute(command, "ipconfig", 0)
+        print("Completed Successfully, Connection Verified..")
     except:
         print("CRITICAL ERROR Executing Command..Does the User Account lack WMI permissions?")
         log_buddy.write_log("Error","CRITICAL ERROR Executing Command..Does the User Account lack Remote WMI permissions?  Password Typo?")
@@ -175,60 +184,21 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
         log_buddy.write_log("Error",str(tb))
         exit(0)
 
-def split_items(values): #Split REGV into key:value pair -> think about building straight or still using CSV
-    item_dict = {}
-    log_buddy.write_log("Execution","SPLITTING "+values+" ON ;")
-    try:
-        item_list = values.split(";")
-    except:
-        log_buddy.write_log("Error", "ERROR SPLITTING "+item_list+" ON ; - MALFORMED INPUT MISSING ';'")
-        tb = traceback.format_exc()
-        log_buddy.write_log("Error",str(tb))
-        error = 1
-        return error
-    x = 0
-    len_list = len(item_list)
-    while x < len(item_list):
-        item_dict[item_list[x]] = item_list[x+1]
-        x = x + 2
-    return item_dict
-
-def get_longest(data): #Calculate longest string in list
-    log_buddy.write_log("Execution","GETTING LONGEST FROM "+str(data))
-    longest = 0
-    for name in data:
-        length = len(name)
-        if length > longest:
-            longest = len(name)
-            longest_name = name
-    log_buddy.write_log("Execution","LONGEST FOUND AS "+longest_name)
-    return longest
-
-def mod_difference(data, longest): #Calculate difference in length between passed string and integer from 'get_longest()', append spaces to evenout
-    log_buddy.write_log("Execution","CALCULATING LENGTH DIFFERENCE BETWEEN "+str(data)+" AND "+str(longest))
-    difference = longest - len(data)
-    log_buddy.write_log("Execution","DIFFERENCE FOUND AS "+str(difference))
-    desc = data
-    for x in range(0, difference):
-        desc = " "+desc
-    log_buddy.write_log("Execution","STRING MODIFIED FROM "+data+" TO "+desc)
-    return desc
-
 def parse_and_pass():#Separate values in individual artifact types and send to handler function, TO DO REGK
     kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
     sys.stdout.write(u"\u001b[1000D")
     sys.stdout.flush()
-
+    so = stringops.string_operator()
     replacer=read_replacer.replacer()
 
     print("\nChecking Directory Contents...")
     log_buddy.write_log("Execution","CHECKING DIRECTORIES")
     progress_bar = tqdm.tqdm(total=count_directories)
-    y = get_longest(directories)
+    y = so.get_longest(directories)
     log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in directories:
         log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
-        desc = mod_difference(item,y)
+        desc = so.mod_difference(item,y)
         progress_bar.set_description(desc)
         #print(item)
         artifact_name = item
@@ -244,19 +214,18 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         progress_bar.update(1)
     progress_bar.close()
 
-    time.sleep(.2)
     print("\nChecking Registry Values...")
     log_buddy.write_log("Execution","CHECKING REGISTRY KEY:VALUE PAIRS")
-    y = get_longest(registry_values)
+    y = so.get_longest(registry_values)
     progress_bar2 = tqdm.tqdm(total=count_reg_values)
     log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in registry_values:
         log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
-        desc = mod_difference(item,y)
+        desc = so.mod_difference(item,y)
         progress_bar2.set_description(desc)
         artifact_name = item
         value_raw = values_dict.get(item)
-        temp_values_dict = split_items(value_raw)
+        temp_values_dict = so.split_items(value_raw)
         if temp_values_dict == 1:
             print("ERROR SPLITTING")
             progress_bar2.update(1)
@@ -269,6 +238,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                 key = replacer.replace_values(key)
                 reg_key = key
                 reg_value = value
+                #time.sleep(.2)
                 check_reg_values(reg_key, reg_value, artifact_name, x)
                 x = x + 1
             except:
@@ -277,15 +247,14 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         progress_bar2.update(1)
     progress_bar2.close()
 
-    time.sleep(.2)
     print("\nCopying File Artifacts...")
     log_buddy.write_log("Execution","COPYING FILES")
     progress_bar3 = tqdm.tqdm(total=count_files)
-    y = get_longest(files)
+    y = so.get_longest(files)
     log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in files:
         log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
-        desc = mod_difference(item,y)
+        desc = so.mod_difference(item,y)
         progress_bar3.set_description(desc)
         artifact_name = item
         progress_bar.set_description(item)
@@ -300,6 +269,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             try:
                 #print(value_raw)
                 #print(file)
+                #time.sleep(.1)
                 gather_file(file, artifact_name, x)
                 x = x + 1
             except:
@@ -313,15 +283,14 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             progress_bar3.update(1)
     progress_bar3.close()
 
-    time.sleep(.2)
     print("\nExecuting Commands through WMI..")
     log_buddy.write_log("Execution","RUNNING COMMANDS REMOTELY THROUGH WMI")
     progress_bar4 = tqdm.tqdm(total=count_commands)
-    y = get_longest(commands)
+    y = so.get_longest(commands)
     log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in commands:
         log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
-        desc = mod_difference(item,y)
+        desc = so.mod_difference(item,y)
         progress_bar4.set_description(desc)
         artifact_name = item
         value_raw = values_dict.get(item)
@@ -333,7 +302,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             if cmd == "":
                 pass
             #print(cmd)
-            log_buddy.write_log("Execution","EXECUTING COMMAND: "+item)
+            log_buddy.write_log("Execution","EXECUTING COMMAND: "+cmd)
             if x == 0:
                 progress_bar4.update(1)
                 try:
@@ -353,15 +322,15 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             #progress_bar4.update(1)
     progress_bar4.close()
 
-    time.sleep(.2)
+
     print("\nExecuting WMIC Commands..")
     log_buddy.write_log("Execution","RUNNING WMIC COMMANDS LOCALLY")
     progress_bar5 = tqdm.tqdm(total=count_wmic_cmds)
-    y = get_longest(wmic_cmds)
+    y = so.get_longest(wmic_cmds)
     log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in wmic_cmds:
         log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
-        desc = mod_difference(item,y)
+        desc = so.mod_difference(item,y)
         progress_bar5.set_description(desc)
         artifact_name = item
         value_raw = values_dict.get(item)
@@ -370,7 +339,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         #print("\nArtifact Name: "+ artifact_name)
         x = 0
         for cmd in wmic_list:
-            log_buddy.write_log("Execution","RUNNING WMIC COMMAND: "+item)
+            log_buddy.write_log("Execution","RUNNING WMIC COMMAND: "+cmd)
             if "." in cmd:
                 cmd = cmd.replace(".",",")
             #print(cmd)
@@ -378,12 +347,13 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                 x = x + 1
                 pass
             else:
+                progress_bar5.update(1)
                 try:
                     run_command(cmd, artifact_name, x)
                 except:
                     d = "d"
             x = x + 1
-            progress_bar5.update(1)
+            #progress_bar5.update(1)
     progress_bar5.close()
             
 def parse_artifacts():
@@ -476,19 +446,19 @@ def separate_into_named_lists(): #Add lists for other types, etc
         item_values = item_values.split(";")
         for item in item_values:
             count_directories = count_directories + 1
-    #count_commands = count_commands / 2
+    count_commands = count_commands / 2
     for item in wmic_cmds:
         item_values = values_dict.get(item)
         item_values = item_values.split(";")
         for item in item_values:
             count_wmic_cmds = count_wmic_cmds + 1
-    #count_wmic_cmd = count_wmic_cmds / 2
+    count_wmic_cmds = count_wmic_cmds / 2
     print("REGISTRY KEY ENTRIES : "+str(count_reg_keys)) #Add print for other types
     print("REGISTRY KEY:VALUE ENTRIES : "+str(count_reg_values))
     print("FILE ENTRIES : "+str(count_files))
-    print("COMMAND ENTRIES : "+str(count_commands))
+    print("COMMAND ENTRIES : "+str(count_commands/2))
     print("DIRECTORY ENTRIES : "+str(count_directories))
-    print("WMI QUERIES : "+str(count_wmic_cmds))
+    print("WMI QUERIES : "+str(count_wmic_cmds/2))
 
 
 def check_dir_contents(directory, artifact_name, iteration):#Send directory path to WMI Session for 'dir' execution
@@ -507,8 +477,8 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
         #print("TO DO WILDCARD HANDLING")
         pass
     else:
-        command = "reg query \""+reg_key+"\" /v "+reg_val
-        command = command.replace("HKEY_LOCAL_MACHINE\\", "HKLM").replace("HKEY_USERS\\", "HKU").replace("HKEY_CURRENT_USER\\", "HKCU")
+        command = "reg query \""+reg_key+"\" /v \""+reg_val+"\""
+        command = command.replace("HKEY_LOCAL_MACHINE\\", "HKLM\\").replace("HKEY_USERS\\", "HKU\\").replace("HKEY_CURRENT_USER\\", "HKCU\\")
         rem_con.execute(command, artifact_name, iteration)
 
 
@@ -546,10 +516,13 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
     else:
         #print("Copying File : "+file_name)
         #name, extension = os.path.splitext(file_name)
-        file_name = file_name.replace(":","")
+        if domain == "":
+            file_name = file_name.replace(":","")
+        else:
+            file_name = file_name.replace(":","$")
         file_name = '\\\\'+str(target)+"\\"+file_name
         #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5" #Remote - Useful for running when not on domains
-        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains/non-admin cmdprompts
+        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /h/y" #Remote - Useful for running when not on domains/non-admin cmdprompts
         #command = "copy "+file_name+" "+cur_dir+"\\"+execution_label+r"-data\files" #Local - Better for domains, copy via domain account permissions
         #command_split = command.split(" ")
         #print("\nEXECUTING : "+command)
