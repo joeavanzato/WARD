@@ -8,15 +8,13 @@ class log_writer(): #Responsible for writing data to error/execution logs
         self.error_log = config.error_log
 
     def write_log(self, type, data):
+        if "\n" not in data[-2:]:
+            data = data + "\n"
         if type == "Error":
             with open(self.error_log, 'a+') as f:
-                if "\n" not in data:
-                    data = data + "\n"
                 f.write(str(datetime.datetime.now())+" "+data)
         elif type == "Execution":
             with open(self.execution_log, 'a+') as f:
-                if "\n" not in data:
-                    data = data + "\n"
                 f.write(str(datetime.datetime.now())+" "+data)
 
 

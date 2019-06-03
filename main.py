@@ -63,6 +63,7 @@ def main():#Because every tool has ASCII art, right?
     parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
 
 
+
 def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default WINDIR
     log_buddy.write_log("Execution", "ESTABLISHING REMOTE CONNECTION..")
     global rem_con, user_sid, user_path, system_root, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, win_dir, win_def
@@ -97,12 +98,16 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
         base_user_dir = system_root+":\\Users\\" + user_target
         user_appdata_dir = base_user_dir+"\\"+"AppData"
         user_local_appdata_dir = user_appdata_dir+"\\"+"Local"
+        user_temp_dir = user_local_appdata_dir+"\\"+"Temp"
         user_roaming_appdata_dir = user_appdata_dir+"\\"+"Roaming"
+        config.user_sid = user_sid
+        config.user_path = user_path
         config.system_root = system_root
         config.base_user_dir = base_user_dir
         config.user_appdata_dir = user_appdata_dir
         config.user_local_appdata_dir = user_local_appdata_dir
         config.user_roaming_appdata_dir = user_roaming_appdata_dir
+        config.user_temp_dir = user_temp_dir
         win_def = 0
         config.win_def = win_def
     except:#NEED SID for real functionality
@@ -164,7 +169,7 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
         rem_con.execute(command, "ipconfig", 0)
     except:
         print("CRITICAL ERROR Executing Command..Does the User Account lack WMI permissions?")
-        log_buddy.write_log("Error","CRITICAL ERROR Executing Command..Does the User Account lack Remote WMI permissions?")
+        log_buddy.write_log("Error","CRITICAL ERROR Executing Command..Does the User Account lack Remote WMI permissions?  Password Typo?")
         print(traceback.print_exc(sys.exc_info()))
         tb = traceback.format_exc()
         log_buddy.write_log("Error",str(tb))
@@ -172,44 +177,57 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
 
 def split_items(values): #Split REGV into key:value pair -> think about building straight or still using CSV
     item_dict = {}
-    item_list = values.split(";")
+    log_buddy.write_log("Execution","SPLITTING "+values+" ON ;")
+    try:
+        item_list = values.split(";")
+    except:
+        log_buddy.write_log("Error", "ERROR SPLITTING "+item_list+" ON ; - MALFORMED INPUT MISSING ';'")
+        tb = traceback.format_exc()
+        log_buddy.write_log("Error",str(tb))
+        error = 1
+        return error
     x = 0
     len_list = len(item_list)
-    #print(str(len_list))
     while x < len(item_list):
-        #print(str(x))
         item_dict[item_list[x]] = item_list[x+1]
-        #print(item_list[x])
-        #print(item_list[x+1])
         x = x + 2
-        #print(str(x))
     return item_dict
 
 def get_longest(data): #Calculate longest string in list
+    log_buddy.write_log("Execution","GETTING LONGEST FROM "+str(data))
     longest = 0
     for name in data:
         length = len(name)
         if length > longest:
             longest = len(name)
+            longest_name = name
+    log_buddy.write_log("Execution","LONGEST FOUND AS "+longest_name)
     return longest
 
 def mod_difference(data, longest): #Calculate difference in length between passed string and integer from 'get_longest()', append spaces to evenout
+    log_buddy.write_log("Execution","CALCULATING LENGTH DIFFERENCE BETWEEN "+str(data)+" AND "+str(longest))
     difference = longest - len(data)
+    log_buddy.write_log("Execution","DIFFERENCE FOUND AS "+str(difference))
     desc = data
     for x in range(0, difference):
         desc = " "+desc
+    log_buddy.write_log("Execution","STRING MODIFIED FROM "+data+" TO "+desc)
     return desc
 
 def parse_and_pass():#Separate values in individual artifact types and send to handler function, TO DO REGK
     kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
     sys.stdout.write(u"\u001b[1000D")
     sys.stdout.flush()
+
     replacer=read_replacer.replacer()
 
     print("\nChecking Directory Contents...")
+    log_buddy.write_log("Execution","CHECKING DIRECTORIES")
     progress_bar = tqdm.tqdm(total=count_directories)
     y = get_longest(directories)
+    log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in directories:
+        log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
         desc = mod_difference(item,y)
         progress_bar.set_description(desc)
         #print(item)
@@ -220,6 +238,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         items_list = item_list.split(";")
         x = 0
         for item in items_list:
+            log_buddy.write_log("Execution","CHECKING ARTIFACT VALUE: "+item)
             check_dir_contents(item, artifact_name, x)
             x = x + 1
         progress_bar.update(1)
@@ -227,17 +246,25 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
 
     time.sleep(.2)
     print("\nChecking Registry Values...")
+    log_buddy.write_log("Execution","CHECKING REGISTRY KEY:VALUE PAIRS")
     y = get_longest(registry_values)
     progress_bar2 = tqdm.tqdm(total=count_reg_values)
+    log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in registry_values:
+        log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
         desc = mod_difference(item,y)
         progress_bar2.set_description(desc)
         artifact_name = item
         value_raw = values_dict.get(item)
         temp_values_dict = split_items(value_raw)
+        if temp_values_dict == 1:
+            print("ERROR SPLITTING")
+            progress_bar2.update(1)
+            pass
         #print("\nArtifact Name: " + artifact_name)
         x = 0 
         for key, value in temp_values_dict.items():
+            log_buddy.write_log("Execution","CHECKING ARTIFACT VALUE: "+key+":"+value)
             try:
                 key = replacer.replace_values(key)
                 reg_key = key
@@ -252,20 +279,23 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
 
     time.sleep(.2)
     print("\nCopying File Artifacts...")
+    log_buddy.write_log("Execution","COPYING FILES")
     progress_bar3 = tqdm.tqdm(total=count_files)
     y = get_longest(files)
+    log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in files:
+        log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
         desc = mod_difference(item,y)
         progress_bar3.set_description(desc)
         artifact_name = item
         progress_bar.set_description(item)
         value_raw = values_dict.get(item)
-        #print(value_raw)
         item_list = replacer.replace_values(value_raw)
         file_list = item_list.split(";")
         #print("\nArtifact Name: " + artifact_name)
         x = 0
         for file in file_list:
+            log_buddy.write_log("Execution","COPYING FILE: "+file)
             desc = file
             try:
                 #print(value_raw)
@@ -285,9 +315,12 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
 
     time.sleep(.2)
     print("\nExecuting Commands through WMI..")
+    log_buddy.write_log("Execution","RUNNING COMMANDS REMOTELY THROUGH WMI")
     progress_bar4 = tqdm.tqdm(total=count_commands)
     y = get_longest(commands)
+    log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in commands:
+        log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
         desc = mod_difference(item,y)
         progress_bar4.set_description(desc)
         artifact_name = item
@@ -300,7 +333,9 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             if cmd == "":
                 pass
             #print(cmd)
+            log_buddy.write_log("Execution","EXECUTING COMMAND: "+item)
             if x == 0:
+                progress_bar4.update(1)
                 try:
                     run_command(cmd_list[x]+" "+cmd_list[x+1], artifact_name, x)
                     x = x + 2
@@ -308,20 +343,24 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                     print("ERROR executing "+cmd)
                     x = x + 2
             elif x%2 != 0:
+                progress_bar4.update(1)
                 try:
                     run_command(cmd_list[x]+" "+cmd_list[x+1], artifact_name, x)
                     x = x + 2
                 except:
                     print("ERROR executing "+cmd)
                     x = x + 2
-            progress_bar4.update(1)
+            #progress_bar4.update(1)
     progress_bar4.close()
 
     time.sleep(.2)
     print("\nExecuting WMIC Commands..")
+    log_buddy.write_log("Execution","RUNNING WMIC COMMANDS LOCALLY")
     progress_bar5 = tqdm.tqdm(total=count_wmic_cmds)
     y = get_longest(wmic_cmds)
+    log_buddy.write_log("Execution","PROGRESS BAR CREATED")
     for item in wmic_cmds:
+        log_buddy.write_log("Execution","CHECKING ARTIFACT NAME: "+item)
         desc = mod_difference(item,y)
         progress_bar5.set_description(desc)
         artifact_name = item
@@ -331,6 +370,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         #print("\nArtifact Name: "+ artifact_name)
         x = 0
         for cmd in wmic_list:
+            log_buddy.write_log("Execution","RUNNING WMIC COMMAND: "+item)
             if "." in cmd:
                 cmd = cmd.replace(".",",")
             #print(cmd)
@@ -358,12 +398,7 @@ def parse_artifacts():
         line_count = 0
         for line in f:
             try:
-                #print(line)
-                try:
-                    atype, name, values, doc, cat = line.split(",")
-                except:
-                    print("ERROR encountered too many values..commas inside quotes?")
-
+                atype, name, values, doc, cat = line.split(",")
                 atype = atype.replace("\"", "").strip()
                 name = name.replace("\"", "").strip()
                 values=values.replace("\"", "").strip()
@@ -376,7 +411,7 @@ def parse_artifacts():
                 line_count = line_count + 1
             except:
                 #print(traceback.print_exc(sys.exc_info()))
-                print("Error Loading Data on Line "+str(line_count))
+                print("ERROR Loading Data on Line "+str(line_count))
                 error_count = error_count + 1
                 pass
 
@@ -476,9 +511,16 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
         command = command.replace("HKEY_LOCAL_MACHINE\\", "HKLM").replace("HKEY_USERS\\", "HKU").replace("HKEY_CURRENT_USER\\", "HKCU")
         rem_con.execute(command, artifact_name, iteration)
 
+
+#Copying Files is interesting - difficult and not.
+#Couldn't decide between xcopy / robocopy - robocopy seems nicer but requires more work to fit syntax properly compared to xcopy, which is closer to normal copy syntax
+#Copying locally vs copying through commands sent in WMI to new cmd.exe process remotely - Locally obviously has to run as local user..or does it?  This is the main restriction on Map Drive -> Copy Direct Local, hard to run as admin user when cmd is not, especially cross-domain
+#Copying remote - since WMI is initiated with the destination user, it is potentially easier to use this cross-domain compared to local user copy permissions
+
+
 def gather_file(file_name, artifact_name, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
     if "*" in file_name:
-        print(file_name)
+        #print("\n"+file_name)
         #print("TO DO WILDCARD HANDLING")
         try:
             file, ext = os.path.splitexe(file_name)
@@ -488,7 +530,7 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
         x = 0
         for character in file_name:
             if character == "*":
-                print(str(x))
+                #print(str(x))
                 wc_position = x
                 break
             x = x + 1
@@ -507,7 +549,7 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
         file_name = file_name.replace(":","")
         file_name = '\\\\'+str(target)+"\\"+file_name
         #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5" #Remote - Useful for running when not on domains
-        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
+        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains/non-admin cmdprompts
         #command = "copy "+file_name+" "+cur_dir+"\\"+execution_label+r"-data\files" #Local - Better for domains, copy via domain account permissions
         #command_split = command.split(" ")
         #print("\nEXECUTING : "+command)

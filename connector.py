@@ -18,11 +18,11 @@ class connector(): #Create, Execute, Destroy.
         print("Target : "+self.target)
         print("User Target : "+self.user)
         print("Using Credential : "+self.credential)
-        #session = winrm.Session(target, auth=(credential, password), transport='kerberos') #WinRM would be easier but would require setup/touching machine in ways I don't want to.
+        #session = winrm.Session(target, auth=(credential, password), transport='kerberos') #WinRM would be easier but would require setup on remote machine.
         self.session = wmi.WMI(computer=self.target, user=self.credential, password=self.password)
 
 
-    def get_sid(self): #Trying a few different ways to get SID
+    def get_sid(self): #Trying a few different ways to get SID before settling on the method below as most reliable
         #for group in self.session.Win32_Group():
         #    print(group.Caption)
         #    for user in group.associators(wmi_result_class="Win32_UserAccount"):
@@ -66,7 +66,6 @@ class connector(): #Create, Execute, Destroy.
                 print(item)
                 self.root = item.WindowsDirectory
                 self.envroot = item.WindowsDirectory[0]
-                #print(self.root, self.envroot)
                 return item.WindowsDirectory
 
     def write_default(self): #Prepare folder for copying/writing/exporting artifacts
@@ -96,16 +95,20 @@ class connector(): #Create, Execute, Destroy.
             command = command.replace("wmic","")
             command = "wmic /node:\""+self.target+"\" /user:"+self.credential+" /password:"+self.password+" "+command+" > "+self.execution_label+"-data\\"+artifact_name+".txt"  
             #print("\n"+command)
+            command_censored = command.replace(self.password, "****").replace("wmic", "echo wmic")
+            result_filt = subprocess.getoutput(command_censored)
             result = subprocess.getoutput(command)
-            with open(self.execution_label+"-data\\"+artifact_name+".txt", 'a+') as f:
-                f.write(str(result))
+            #with open(self.execution_label+"-data\\"+artifact_name+".txt", 'a+') as f:
+            #    f.write(str(result))
+
             command = command.replace(self.password, "XXXXXXXX")
             #print("Process Executed: "+command)
             print(result)
             #process_id, return_value = self.session.Win32_Process.Create(CommandLine=command, ProcessStartupInformation=process_startup)
             #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
         else:
-            process_id, return_value = self.session.Win32_Process.Create(CommandLine=("cmd.exe /c "+command+" > "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt"), ProcessStartupInformation=process_startup)
+            process_id, return_value = self.session.Win32_Process.Create(CommandLine=("cmd.exe /c echo "+command+" >> "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt"), ProcessStartupInformation=process_startup)
+            process_id, return_value = self.session.Win32_Process.Create(CommandLine=("cmd.exe /c "+command+" >> "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt"), ProcessStartupInformation=process_startup)
             #print("Process Executed: cmd.exe /c "+command+" > "+self.envroot+":\\Users\\"+self.credential+"\TEMPARTIFACTS\\"+artifact_name+str(iteration)+".txt")
             #print("Process ID: "+str(process_id)+" , Return Value (0 = Success): "+str(return_value)+"\n")
 
@@ -114,8 +117,6 @@ class connector(): #Create, Execute, Destroy.
         try:
             command = "net view"
             cmd_result = subprocess.getoutput(command)
-            #print(cmd_result)
-            #print(type(cmd_result))
             if self.target.lower() in cmd_result.lower():
                 print("DRIVE ALREADY MAPPED")
                 x = 1
