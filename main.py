@@ -193,7 +193,7 @@ def test_connection():#Run basic command, make sure nothing breaks, could probab
     command = 'ipconfig /all'
     try:
         log_buddy.write_log("Execution","EXECUTING 'ipconfig /all' ON "+target)
-        rem_con.execute(command, "ipconfig", 0)
+        rem_con.execute(command, "ipconfig", "ipconfig.","COMMAND", 0)
         print("Completed Successfully, Connection Verified..")
     except:
         print("CRITICAL ERROR Executing Command..Does the User Account lack WMI permissions?")
@@ -225,10 +225,14 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         #print(value_raw)
         item_list = replacer.replace_values(value_raw)
         items_list = item_list.split(";")
+        category = str(category_dict.get(item))
+        len_cat = len(category)
+        category = category[:len(category)-5]
+        #print(category)
         x = 0
         for item in items_list:
             log_buddy.write_log("Execution","CHECKING ARTIFACT VALUE: "+item)
-            check_dir_contents(item, artifact_name, x)
+            check_dir_contents(item, artifact_name, category, x)
             x = x + 1
         progress_bar.update(1)
     progress_bar.close()
@@ -245,6 +249,10 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         artifact_name = item
         value_raw = values_dict.get(item)
         temp_values_dict = so.split_items(value_raw)
+        category = str(category_dict.get(item))
+        len_cat = len(category)
+        category = category[:len(category)-5]
+        #print(category)
         if temp_values_dict == 1:
             print("ERROR SPLITTING")
             progress_bar2.update(1)
@@ -258,7 +266,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                 reg_key = key
                 reg_value = value
                 #time.sleep(.2)
-                check_reg_values(reg_key, reg_value, artifact_name, x)
+                check_reg_values(reg_key, reg_value, artifact_name, category, x)
                 x = x + 1
             except:
                 print("Error Reading Key:Value "+reg_key+":"+reg_value)
@@ -282,6 +290,10 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         file_list = item_list.split(";")
         #print("\nArtifact Name: " + artifact_name)
         x = 0
+        category = str(category_dict.get(item))
+        len_cat = len(category)
+        category = category[:len(category)-5]
+        #print(category)
         for file in file_list:
             log_buddy.write_log("Execution","COPYING FILE: "+file)
             desc = file
@@ -289,7 +301,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
                 #print(value_raw)
                 #print(file)
                 #time.sleep(.1)
-                gather_file(file, artifact_name, x)
+                gather_file(file, artifact_name, category, x)
                 x = x + 1
             except:
                 print(traceback.print_exc(sys.exc_info()))
@@ -317,6 +329,10 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         cmd_list = item_list.split(";")
         #print("\nArtifact Name: "+ artifact_name)
         x = 0
+        category = str(category_dict.get(item))
+        len_cat = len(category)
+        category = category[:len(category)-5]
+        #print(category)
         for cmd in cmd_list:
             if cmd == "":
                 pass
@@ -325,7 +341,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             if x == 0:
                 progress_bar4.update(1)
                 try:
-                    run_command(cmd_list[x]+" "+cmd_list[x+1], artifact_name, x)
+                    run_command(cmd_list[x]+" "+cmd_list[x+1], artifact_name, category, x)
                     x = x + 2
                 except:
                     print("ERROR executing "+cmd)
@@ -333,7 +349,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             elif x%2 != 0:
                 progress_bar4.update(1)
                 try:
-                    run_command(cmd_list[x]+" "+cmd_list[x+1], artifact_name, x)
+                    run_command(cmd_list[x]+" "+cmd_list[x+1], artifact_name, category, x)
                     x = x + 2
                 except:
                     print("ERROR executing "+cmd)
@@ -356,6 +372,10 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
         item_list = replacer.replace_values(value_raw)
         wmic_list = item_list.split(";")
         #print("\nArtifact Name: "+ artifact_name)
+        category = str(category_dict.get(item))
+        len_cat = len(category)
+        category = category[:len(category)-5]
+        #print(category)
         x = 0
         for cmd in wmic_list:
             log_buddy.write_log("Execution","RUNNING WMIC COMMAND: "+cmd)
@@ -368,7 +388,7 @@ def parse_and_pass():#Separate values in individual artifact types and send to h
             else:
                 progress_bar5.update(1)
                 try:
-                    run_command(cmd, artifact_name, x)
+                    run_command(cmd, artifact_name, category, "WMIC", x)
                 except:
                     d = "d"
             x = x + 1
@@ -480,7 +500,7 @@ def separate_into_named_lists(): #Add lists for other types, etc
     print("WMI QUERIES : "+str(count_wmic_cmds/2))
 
 
-def check_dir_contents(directory, artifact_name, iteration):#Send directory path to WMI Session for 'dir' execution
+def check_dir_contents(directory, artifact_name, category, iteration):#Send directory path to WMI Session for 'dir' execution
     #print("\nArtifact Name: "+artifact_name)
     #print("Examining Contents of Directory : " + directory)
     if "*" in directory:
@@ -488,9 +508,9 @@ def check_dir_contents(directory, artifact_name, iteration):#Send directory path
         command = "dir /s "+directory
     else:
         command = "dir "+directory
-    rem_con.execute(command, artifact_name, iteration)
+    rem_con.execute(command, artifact_name, category, "DIRECTORY", iteration)
 
-def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:VALUE pair to WMI Session to extract value if exists
+def check_reg_values(reg_key, reg_val, artifact_name, category, iteration):#Send REG KEY:VALUE pair to WMI Session to extract value if exists
     #print("Examining Registry Value : "+reg_key+":"+reg_val)
     if "*" in reg_key:
         #print("TO DO WILDCARD HANDLING")
@@ -498,7 +518,7 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
     else:
         command = "reg query \""+reg_key+"\" /v \""+reg_val+"\""
         command = command.replace("HKEY_LOCAL_MACHINE\\", "HKLM\\").replace("HKEY_USERS\\", "HKU\\").replace("HKEY_CURRENT_USER\\", "HKCU\\")
-        rem_con.execute(command, artifact_name, iteration)
+        rem_con.execute(command, artifact_name, category, "REGISTRY", iteration)
 
 
 #Copying Files is interesting - difficult and not.
@@ -507,14 +527,14 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
 #Copying remote - since WMI is initiated with the destination user, it is potentially easier to use this cross-domain compared to local user copy permissions
 
 
-def gather_file(file_name, artifact_name, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
+def gather_file(file_name, artifact_name, category, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
     file_name = '\\\\' + str(target) + "\\" + file_name
     file_name = "\""+file_name+"\""
+    dir = system_root + ":\\Users\\" + elevated_username + "\TEMPARTIFACTS\\" + category + artifact_name + "\\FILE"
     if admin_priv == True:
         file_name = file_name.replace(":", "$")
         command = "icacls "+file_name+" /grant "+elevated_username+":F "
-        rem_con.execute(command, artifact_name, iteration)
-
+        rem_con.execute(command, artifact_name, category, "FILE", iteration)
     if "*" in file_name:
         #print("\n"+file_name)
         #print("TO DO WILDCARD HANDLING")
@@ -535,8 +555,9 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
             file_name = file_name.replace("**","*")
             file_name = file_name.replace(":","")
             #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5"
-            command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
-            rem_con.execute(command, artifact_name, iteration)
+            command = "xcopy " + file_name + " " +dir+" /h/y"
+            #command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
+            rem_con.execute(command, artifact_name, category, "FILE", iteration)
 
 
     else:
@@ -547,16 +568,17 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
         else:
             file_name = file_name.replace(":","$")
         #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5" #Remote - Useful for running when not on domains
-        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /h/y" #Remote - Useful for running when not on domains/non-admin cmdprompts
+        command = "xcopy "+file_name+" "+dir +" /h/y"
+        #command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /h/y" #Remote - Useful for running when not on domains/non-admin cmdprompts
         #command = "copy "+file_name+" "+cur_dir+"\\"+execution_label+r"-data\files" #Local - Better for domains, copy via domain account permissions
         #command_split = command.split(" ")
         #print("\nEXECUTING : "+command)
         #cmd_result = subprocess.run(command, shell=True)
-        rem_con.execute(command, artifact_name, iteration)
+        rem_con.execute(command, artifact_name, category, "FILE", iteration)
 
-def run_command(command, artifact_name, iteration):
+def run_command(command, artifact_name, category, type, iteration):
     #print("Running Command : "+command)
-    rem_con.execute(command, artifact_name, iteration)
+    rem_con.execute(command, artifact_name, category, type, iteration)
 
         #Add handler functions for other types
 main()

@@ -101,7 +101,7 @@ class connector(): #Create, Execute, Destroy.
 
     #Passwords - Either you don't provide it initially via -p XXX then provide it to connect via WMI then either DONT pass to each WMIC and individually enter or DO pass to each WMI
     #Alternative is provide initially via -p XXX then DO or DONT provide to each WMIC -> although likely in this case you wouldn't care and would provide it regardless
-    def execute(self, command, artifact_name, iteration):#Run Command on Remote Host
+    def execute(self, command, artifact_name, category, type, iteration):#Run Command on Remote Host
         show_window = 0
         process_startup = self.session.Win32_ProcessStartup.new()
         process_startup.ShowWindow = show_window #Hide Window
@@ -121,7 +121,7 @@ class connector(): #Create, Execute, Destroy.
                 result = subprocess.getoutput(command)#With PW
 
         else:#Everything except WMIC commands
-            dir = self.envroot + ":\\Users\\" + self.credential + "\TEMPARTIFACTS\\" + artifact_name
+            dir = self.envroot + ":\\Users\\" + self.credential + "\TEMPARTIFACTS\\" + category+artifact_name+"\\"+type
             val = self.make_dir(dir)
             if val == 0:
                 dir = dir + "\\" + artifact_name + ".txt"
