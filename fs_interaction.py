@@ -23,19 +23,19 @@ def copy_from_host():
     dir_name = '\\\\'+str(config.target)+"\\"
     log_buddy.write_log("Execution", "COPYING REMOTE TEMPARTIFACTS DIR TO LOCAL HOST..")
     try:
-        command = "xcopy "+dir_name+config.system_root+":\\Users\\"+config.elevated_username+"\TEMPARTIFACTS "+config.execution_label+"-data\\files /Y/H/S"
+        command = "xcopy "+dir_name+config.system_root+":\\Users\\"+config.elevated_username+"\TEMPARTIFACTS \""+config.execution_label+"-data\\files\" /Y/H/S"
         print("RUNNING : "+command)
         cmd_result = subprocess.run(command, shell=True)
     except:
         pass
     try:
-        command = "xcopy "+dir_name+config.system_root+"\\Users\\"+config.elevated_username+"\TEMPARTIFACTS "+config.execution_label+"-data\\files /Y/H/S"
+        command = "xcopy "+dir_name+config.system_root+"\\Users\\"+config.elevated_username+"\TEMPARTIFACTS \""+config.execution_label+"-data\\files\" /Y/H/S"
         print("RUNNING : "+command)
         cmd_result = subprocess.run(command, shell=True)
     except:
         pass
     try:
-        command = "xcopy "+dir_name+config.system_root+"$\\Users\\"+config.elevated_username+"\TEMPARTIFACTS\ "+config.execution_label+"-data\\files /Y/H/S"
+        command = "xcopy "+dir_name+config.system_root+"$\\Users\\"+config.elevated_username+"\TEMPARTIFACTS \""+config.execution_label+"-data\\files\" /Y/H/S"
         print("RUNNING : "+command)
         cmd_result = subprocess.run(command, shell=True)
     except:
@@ -196,6 +196,15 @@ def setup_log_file(execution_label, error_log, execution_log):#Creates error/exe
     except:
         os.chdir(cur_dir)
         print("ERROR "+execution_label+r"-data\files directory already exists or lacking permissions..")
+    try:
+        print("Making "+execution_label+r"-data\files\WMI Directory..")
+        cur_dir = os.getcwd()
+        os.chdir(execution_label+"-data\\files")
+        os.mkdir("WMI")
+        os.chdir(cur_dir)
+    except:
+        os.chdir(cur_dir)
+        print("ERROR "+execution_label+r"-data\files\WMI directory already exists or lacking permissions..")
     mode = 'a' if os.path.exists(error_log) else 'w'
     with open(error_log, mode):
         print("Error Log Created or Already Exists..")

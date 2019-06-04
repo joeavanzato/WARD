@@ -17,6 +17,7 @@ args = parser.parse_args()
 #TO DO - Add Recursive Registry/File Copy Support, Ensure Integrity that actions reported are actually occurring, build out log writing
 #Implement VSS Shadow Copy to pull 'in use' files?  Or something else?  Hmm...maybe look at Active Shadow Copy and pull out of that?
 
+#TO DO - IF RUNNING IN DOMAIN ADMINISTRATOR TERMINAL PERMISSIONS - WMI  IS ONLY ATTEMPTED USE FOR CMD EXECUTION - REG KEY/VALUE ENUMERATION, MAPPING/COPYING FILES AND WMIC CAN ALL BE DONE LOCALLY
 
 global type_dict, values_dict, doc_dict, base_user_dir, user_appdata_dir, user_local_appdata_dir, user_roaming_appdata_dir, log_buddy, cur_dir, elevated_password
 current_datetime = datetime.datetime.now()
@@ -34,6 +35,7 @@ if args.domain is not None:
     config.domain = domain
 else:
     domain = ""
+
 execution_label = target+"["+user_target+"]"
 artifact_file=execution_label+"-data/artifacts.csv" #Input Artifact File in format "TYPE, NAME, ; separated VALUES, DOCUMENTATION
 execution_log=execution_label+"-logs/execution_log.txt"
@@ -74,8 +76,8 @@ def main():#Because every tool has ASCII art, right?
     separate_into_named_lists() #Separate the gathered data into various lists
     establish_connection() #Prepare Connection to Remote Host
     test_connection() #Verify working connection with ipconfig
-    #parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
-    #fs_interaction.copy_from_host() #Copy all collected artifacts from target to localhost
+    parse_and_pass() #Check artifact type and pass to helper functions for cmd execution
+    fs_interaction.copy_from_host() #Copy all collected artifacts from target to localhost
 
 
 
@@ -154,8 +156,12 @@ def establish_connection(): #Setup WMI Connection, Get SID, UserPath and default
         log_buddy.write_log("Error",str(tb))
     try:
         print("Creating TEMPARTIFACT Directory on "+target)
-        rem_con.write_default()
-        log_buddy.write_log("Execution", "Successfully Created Remote TEMPARTIFACT DIR")
+        dir = system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS"
+        rv = rem_con.make_dir(dir)
+        if rv == 0:
+            log_buddy.write_log("Execution", "Successfully Created Remote TEMPARTIFACT DIR")
+        else:
+            print("ERROR CREATING TEMPARTIFACTS DIR")
     except:
         print("CRITICAL ERROR Creating TEMPARTIFACT DIR")
         log_buddy.write_log("Error","CRITICAL ERROR Creating TEMPARTIFACT DIR")
@@ -502,6 +508,13 @@ def check_reg_values(reg_key, reg_val, artifact_name, iteration):#Send REG KEY:V
 
 
 def gather_file(file_name, artifact_name, iteration):#Send filename+extension to WMI Session for copying to remote artifact folder if exists
+    file_name = '\\\\' + str(target) + "\\" + file_name
+    file_name = "\""+file_name+"\""
+    if admin_priv == True:
+        file_name = file_name.replace(":", "$")
+        command = "icacls "+file_name+" /grant "+elevated_username+":F "
+        rem_con.execute(command, artifact_name, iteration)
+
     if "*" in file_name:
         #print("\n"+file_name)
         #print("TO DO WILDCARD HANDLING")
@@ -517,13 +530,13 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
                 wc_position = x
                 break
             x = x + 1
-        #if "*" == file_name[-1:]:
+        if "*" == file_name[-1:]:
             #print("Doing Full Recursive Copy..")
-        file_name = file_name.replace("**","*")
-        file_name = file_name.replace(":","")
-        file_name = '\\\\'+str(target)+"\\"+file_name
-        #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5"
-        command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
+            file_name = file_name.replace("**","*")
+            file_name = file_name.replace(":","")
+            #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5"
+            command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /s/h/y" #Remote - Useful for running when not on domains
+            rem_con.execute(command, artifact_name, iteration)
 
 
     else:
@@ -533,7 +546,6 @@ def gather_file(file_name, artifact_name, iteration):#Send filename+extension to
             file_name = file_name.replace(":","")
         else:
             file_name = file_name.replace(":","$")
-        file_name = '\\\\'+str(target)+"\\"+file_name
         #command = "robocopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /C /D /Y /I /E /Z /NP /R:5 /W:5" #Remote - Useful for running when not on domains
         command = "xcopy "+file_name+" "+system_root+":\\Users\\"+elevated_username+"\TEMPARTIFACTS /h/y" #Remote - Useful for running when not on domains/non-admin cmdprompts
         #command = "copy "+file_name+" "+cur_dir+"\\"+execution_label+r"-data\files" #Local - Better for domains, copy via domain account permissions
